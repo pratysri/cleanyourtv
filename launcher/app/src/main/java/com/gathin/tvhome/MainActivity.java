@@ -394,7 +394,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     focusTile(lastFocused < COLUMNS ? lastFocused : 0);
                 }
                 @Override public void focusTopBarFromRow() {
-                    setCompact(false);
+                    // The row and dock stay down while the top bar has focus; only the dock brings them back up.
                     (btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton()).requestFocus();
                 }
             });
@@ -1937,8 +1937,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void setCompact(boolean on) {
         if (continueRow == null || continueRow.isCompact() == on || lastDockTop < 0) return;
         float h = root.getHeight();
-        continueRow.setCompact(on, h * 0.5f);
-        float dockShift = on ? Math.max(0f, (h - 64 * density) - lastDockTop) : 0f;
+        // Low on the screen: only a sliver of the dock shows under the row, and the wallpaper gets the rest.
+        float glimpse = 22 * density;
+        continueRow.setCompact(on, h - glimpse - 6 * density - continueRow.heightPx());
+        float dockShift = on ? Math.max(0f, (h - glimpse) - lastDockTop) : 0f;
         grid.animate().translationY(dockShift).setDuration(on ? 420 : 320)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
         // The clock, top bar and sky stay as they are: only the row and the dock move.
