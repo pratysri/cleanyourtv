@@ -120,7 +120,7 @@ final class Order {
     // ---- file ------------------------------------------------------------------------------------
 
     static File file(Context ctx) {
-        return new File(ctx.getFilesDir(), FILE_NAME);
+        return new File(ctx.getFilesDir(), Profiles.orderFileName(ctx, FILE_NAME));   // per person (hisense-home)
     }
 
     /** The saved order, or null when there is none or it does not decode (then it is ignored, not deleted). */

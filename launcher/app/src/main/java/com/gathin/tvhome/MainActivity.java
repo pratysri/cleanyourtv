@@ -197,6 +197,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     // Static so they survive the activity being destroyed while another app is open (low-memory TVs,
     // or Developer options → "Don't keep activities"); they only reset when the process dies.
     private static int lastFocused = 0;
+    /** hisense-home fork: Continue watching above the dock; null when continue_watching is off. */
+    private ContinueRow continueRow;
+    private Weather weather;
+    private TextView btnProfile;
     /** App of the last focused tile, so focus follows it when the app list changes. */
     private static String lastFocusedKey;
     private float density;
@@ -378,6 +382,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
+        if (getResources().getBoolean(R.bool.continue_watching)) {
+            continueRow = new ContinueRow(this, root, new ContinueRow.Host() {
+                @Override public void onContinueFocused() {
+                    hideGlass();
+                    hideHero();
+                    continueRow.setShown(true);
+                }
+                @Override public void focusDockFromRow() {
+                    focusTile(lastFocused < COLUMNS ? lastFocused : 0);
+                }
+                @Override public void focusTopBarFromRow() {
+                    (btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton()).requestFocus();
+                }
+            });
+        }
         root.setBackgroundColor(cfg.backgroundColor);
         // root fills the window with an opaque colour (Config keeps background_color opaque), so the window's own
         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
@@ -598,6 +617,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
         btnReorder.setVisibility(cfg.reorderButton ? View.VISIBLE : View.GONE);
+        // hisense-home fork: profile pill and weather line.
+        btnProfile = findViewById(R.id.btnProfile);
+        if (Profiles.enabled(this)) {
+            btnProfile.setText(Profiles.currentName(this));
+            btnProfile.setVisibility(View.VISIBLE);
+            btnProfile.setOnClickListener(v -> {
+                String who = Profiles.next(this);
+                android.widget.Toast.makeText(this, getString(R.string.profile_switched, who),
+                        android.widget.Toast.LENGTH_SHORT).show();
+                recreate();
+            });
+        }
+        if (getResources().getBoolean(R.bool.weather) && !getString(R.string.latitude).isEmpty()) {
+            weather = new Weather(findViewById(R.id.weather), getString(R.string.latitude),
+                    getString(R.string.longitude), getResources().getBoolean(R.bool.weather_fahrenheit));
+        }
         if (!cfg.showNetworkPill) btnWifi.setVisibility(View.GONE);
         showInputsPill = cfg.showInputsPill;
         btnLibraryTop = findViewById(R.id.btnLibraryTop);
@@ -645,23 +680,41 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                // Back to the dock tile Up came from, not wherever the focus finder lands.
+                // Back to the dock tile Up came from, not wherever the focus finder lands; Continue watching first.
+                if (continueRow != null && continueRow.focus()) return true;
                 focusTile(lastFocused % COLUMNS);
                 return true;
             }
             int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
-            return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton) return true;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton) return true;
+            // hisense-home fork: step to the neighbouring visible pill. The focus finder could otherwise pick a
+            // Continue watching card below instead of the pill beside this one.
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                ViewGroup bar = (ViewGroup) v.getParent();
+                boolean towardsEnd = (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) != rtlMenuBar;
+                int i = bar.indexOfChild(v);
+                for (i += towardsEnd ? 1 : -1; i >= 0 && i < bar.getChildCount(); i += towardsEnd ? 1 : -1) {
+                    View next = bar.getChildAt(i);
+                    if (next.getVisibility() == View.VISIBLE && next.isFocusable()) {
+                        next.requestFocus();
+                        return true;
+                    }
+                }
+                return true;
+            }
+            return false;
         };
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         btnReorder.setOnKeyListener(pillKeys);
+        btnProfile.setOnKeyListener(pillKeys);
         btnLibraryTop.setOnKeyListener(pillKeys);
         if (advancedEffects) {
-            for (View button : new View[]{btnInputs, btnWifi, btnReorder, btnLibraryTop, btnSettings}) {
+            for (View button : new View[]{btnInputs, btnWifi, btnProfile, btnReorder, btnLibraryTop, btnSettings}) {
                 button.setOnFocusChangeListener((view, focused) -> view.animate()
                         .scaleX(focused ? 1.04f : 1f).scaleY(focused ? 1.04f : 1f)
                         .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start());
@@ -792,6 +845,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        if (continueRow != null) continueRow.onResume();
+        if (weather != null) weather.onResume();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1003,6 +1058,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        if (continueRow != null) continueRow.onPause();
+        if (weather != null) weather.onPause();
         root.removeCallbacks(showIdleClock);
         endReorder();   // Home or another app while reordering keeps the order so far
         wallpaperPlayer.stop();
@@ -1066,6 +1123,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (continueRow != null) continueRow.onDestroy();
+        if (weather != null) weather.onDestroy();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1519,10 +1578,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             showHero(position, scroll ? r.top - dy : r.top);
+            if (continueRow != null) {
+                float dockTop = (scroll ? r.top - dy : r.top) - 6 * density;
+                Rect top = new Rect(0, 0, leftBlockView().getWidth(), leftBlockView().getHeight());
+                root.offsetDescendantRectToMyCoords(leftBlockView(), top);
+                continueRow.placeBottomAt(dockTop - 26 * density, top.bottom + 14 * density);
+                continueRow.setShown(true);
+            }
         } else {
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
             showGlowOnly(position);
+            if (continueRow != null) continueRow.setShown(false);
             // Scroll just enough so the whole glass (not only the tile) is visible.
             revealRect.set(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, revealRect, reducedMotion);
@@ -1548,6 +1615,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
+        hero.setVisibility(continueRow != null && continueRow.hasItems() ? View.INVISIBLE : View.VISIBLE);
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
@@ -1853,6 +1921,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    private View leftBlockView() {
+        return findViewById(R.id.leftBlock);
+    }
+
     private void hideGlass() {
         if (!glassShown) return;
         glassShown = false;
@@ -2070,7 +2142,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {
+                // hisense-home: Up from the dock goes to Continue watching when it has shows.
+                if (continueRow != null && continueRow.focus()) {
+                    grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                    return true;
+                }
+                return false;                              // dock row: let focus move to the top bar
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -2234,7 +2313,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             greeting.setText(festiveGreeting);
             greeting.setTextColor(liftTowardsWhite(festival.accentColor(), 0.25f));
         } else {
-            greeting.setText(greetingName.isEmpty() ? getString(res)
+            String fixed = getString(R.string.greeting_text);   // hisense-home fork
+            greeting.setText(!fixed.isEmpty() ? fixed : greetingName.isEmpty() ? getString(res)
                     : getString(R.string.greeting_with_name, getString(res), greetingName));
             greeting.setTextColor(greetingColor);
         }

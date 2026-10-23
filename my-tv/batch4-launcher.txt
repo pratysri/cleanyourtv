@@ -1,0 +1,3 @@
+# Batch 4, launcher phase only: Google TV setup wizard claims HOME. It owns only the unused
+# older saved network; the active network belongs to android.uid.system.
+com.google.android.tungsten.setupwraith

@@ -1,0 +1,8 @@
+# Batch 2: retail/factory modes, setup walkthrough, background cleaner, VIDAA content-tab feed.
+com.vt.storemode
+com.vt.tv.b2b
+com.vt.factory
+com.vt.fte
+com.vt.tv.protector
+com.vt.tv.calmanconnector
+com.vidaa.oemtabcontentprovider

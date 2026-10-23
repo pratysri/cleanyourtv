@@ -1,0 +1,5 @@
+# Hisense hengshan (STT2.230310.002), batch 1: telemetry and tracking. From examples/hisense-u75-hengshan.
+com.vt.tv.evservice                         # Hisense ACR, viewing-data recognition
+android.autoinstalls.config.google.gtvpai   # silent partner app auto-installs
+com.google.android.partnersetup             # partner referral tracking
+com.google.android.feedback                 # crash/feedback uploader

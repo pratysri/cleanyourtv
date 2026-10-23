@@ -254,6 +254,22 @@
                             android:includeFontPadding="false"
                             android:visibility="gone" />
 
+                        <!-- hisense-home fork: weather from Open-Meteo, shown once the first fetch succeeds. -->
+                        <TextView
+                            android:id="@+id/weather"
+                            android:gravity="left"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:textColor="#E6FFFFFF"
+                            android:textSize="16sp"
+                            android:fontFamily="@string/font_regular"
+                            android:letterSpacing="0.04"
+                            android:includeFontPadding="false"
+                            android:visibility="gone" />
+
                         <TextClock
                             android:id="@+id/date"
                             android:gravity="left"
@@ -320,6 +336,15 @@
                     android:ellipsize="end"
                     android:text="@string/wifi"
                     android:drawableStart="@drawable/ic_wifi"
+                    android:nextFocusDown="@+id/grid" />
+
+                <!-- hisense-home fork: who is watching; each profile keeps its own tile order. -->
+                <TextView
+                    android:id="@+id/btnProfile"
+                    style="@style/TopButton"
+                    android:singleLine="true"
+                    android:visibility="gone"
+                    android:drawableStart="@drawable/ic_person"
                     android:nextFocusDown="@+id/grid" />
 
                 <TextView

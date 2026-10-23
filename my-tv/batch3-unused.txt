@@ -1,0 +1,5 @@
+# Batch 3: unused on a TV.
+com.android.printspooler
+com.google.android.syncadapters.calendar
+com.android.providers.calendar
+com.android.providers.contacts
