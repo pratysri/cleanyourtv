@@ -39,7 +39,10 @@ final class FolderDrawable extends Drawable {
     private final Path clip = new Path();
     private final RectF r = new RectF();
 
-    FolderDrawable(List<Mini> apps) {
+    private final float density;
+
+    FolderDrawable(List<Mini> apps, float density) {
+        this.density = density;
         for (int i = 0; i < Math.min(9, apps.size()); i++) minis.add(apps.get(i));
         chip.setColor(0xFF2B2E36);
     }
@@ -47,11 +50,21 @@ final class FolderDrawable extends Drawable {
     @Override public void draw(Canvas canvas) {
         Rect b = getBounds();
         float w = b.width(), h = b.height();
-        // Frosted glass: a light veil over whatever is behind the tile, brighter at the top.
-        glass.setShader(new LinearGradient(0, b.top, 0, b.bottom, 0x66C8CCD6, 0x40868A96, Shader.TileMode.CLAMP));
-        canvas.drawRect(b, glass);
-        sheen.setShader(new LinearGradient(0, b.top, 0, b.top + h * 0.5f, 0x26FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
-        canvas.drawRect(b.left, b.top, b.right, b.top + h * 0.5f, sheen);
+        // Liquid Glass, like the dock: nearly clear so the wallpaper reads through, with a rim that catches light
+        // at the top. The tile has no dark card under it (AppAdapter), so nothing tints it black.
+        glass.setShader(new LinearGradient(0, b.top, 0, b.bottom,
+                new int[]{0x33FFFFFF, 0x17FFFFFF, 0x0DFFFFFF}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
+        float corner = AppAdapter.cornerRadius(b.width(), density);
+        r.set(b);
+        canvas.drawRoundRect(r, corner, corner, glass);
+        float rimW = 1.5f * density;
+        sheen.setStyle(Paint.Style.STROKE);
+        sheen.setStrokeWidth(rimW);
+        sheen.setShader(new LinearGradient(0, b.top, 0, b.bottom,
+                new int[]{0x99FFFFFF, 0x26FFFFFF, 0x1AFFFFFF, 0x4DFFFFFF}, new float[]{0f, 0.25f, 0.8f, 1f},
+                Shader.TileMode.CLAMP));
+        r.inset(rimW / 2f, rimW / 2f);
+        canvas.drawRoundRect(r, corner, corner, sheen);
 
         // 3x3 minis with even margins; each keeps the 16:9 shape of a TV app tile.
         float padX = w * 0.075f, padY = h * 0.10f, gapX = w * 0.035f, gapY = h * 0.055f;

@@ -309,7 +309,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             List<FolderDrawable.Mini> minis = new ArrayList<>();
             for (Entry e : folder) minis.add(new FolderDrawable.Mini(e.banner, e.icon));
             fresh.add(new Entry(Entry.FOLDER, ctx.getString(R.string.folder_name),
-                    new ComponentName(ctx, "folder.more_apps"), new FolderDrawable(minis), null, null, 0xFF8E9AAF));
+                    new ComponentName(ctx, "folder.more_apps"), new FolderDrawable(minis, ctx.getResources().getDisplayMetrics().density), null, null, 0xFF8E9AAF));
         }
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
@@ -458,7 +458,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
         // nothing on every frame; keep it under banners with transparent parts and under icon tiles.
-        h.card.setBackground(e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
+        // The folder is glass all through: no dark card behind it (hisense-home fork).
+        h.card.setBackground(e.kind == Entry.FOLDER
+                || e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
         if (e.banner != null) {
             h.banner.setImageDrawable(e.banner);
             h.banner.setVisibility(View.VISIBLE);
