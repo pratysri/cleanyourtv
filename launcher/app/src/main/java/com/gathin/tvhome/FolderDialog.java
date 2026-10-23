@@ -111,6 +111,14 @@ final class FolderDialog {
             if (first == null) first = tile.findViewWithTag("card");
         }
 
+        // Liquid Glass sheet behind the apps: clear-ish fill, bright top rim, over the blurred Home.
+        GradientDrawable sheet = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x2EFFFFFF, 0x12FFFFFF, 0x0AFFFFFF});
+        sheet.setCornerRadius(34 * density);
+        sheet.setStroke(Math.round(1.5f * density), 0x59FFFFFF);
+        panel.setBackground(sheet);
+        int sheetPad = Math.round(40 * density);
+        panel.setPadding(sheetPad, Math.round(30 * density), sheetPad, Math.round(18 * density));
         ScrollView scroll = new ScrollView(activity);
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
@@ -212,7 +220,7 @@ final class FolderDialog {
             android.graphics.drawable.BitmapDrawable d =
                     new android.graphics.drawable.BitmapDrawable(activity.getResources(), c);
             d.setFilterBitmap(true);
-            return new android.graphics.drawable.LayerDrawable(new Drawable[]{d, new ColorDrawable(0x8C000000)});
+            return new android.graphics.drawable.LayerDrawable(new Drawable[]{d, new ColorDrawable(0x4D000000)});
         } catch (RuntimeException | OutOfMemoryError e) {
             return null;
         }

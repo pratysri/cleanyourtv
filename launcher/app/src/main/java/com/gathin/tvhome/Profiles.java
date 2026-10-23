@@ -76,6 +76,22 @@ final class Profiles {
 
     /** Starts the log the first time profiles are used, so rows from before stay shared. */
     static void ensureLog(Context ctx) {
+        // One-time restore of the owner's own "Not mine" moves, which an earlier build wiped by mistake.
+        if (!prefs(ctx).getBoolean("owners_restore_1", false)) {
+            String[][] moved = {
+                    {"com.netflix.ninja|behind her eyes", "1792630235000:1"},
+                    {"com.netflix.ninja|animals", "1791597266000:1"},
+                    {"com.amazon.amazonvideo.livingroom|reacher", "1790239895290:1"},
+                    {"com.wbd.stream|the penguin", "1791672928000:1"},
+                    {"com.netflix.ninja|dil dhadakne do", "1791599674000:1"},
+                    {"com.hulu.livingroomplus|rick and morty", "1792048147406:1"},
+                    {"tv.pluto.android|star trek: the motion pictures", "1789631463024:1"},
+            };
+            SharedPreferences.Editor e = ctx.getSharedPreferences(OWNERS, Context.MODE_PRIVATE).edit();
+            for (String[] m : moved) e.putString(m[0], m[1]);
+            e.commit();
+            prefs(ctx).edit().putBoolean("owners_restore_1", true).apply();
+        }
         if (prefs(ctx).getString(LOG, "").isEmpty()) appendLog(ctx, System.currentTimeMillis(), current(ctx));
     }
 

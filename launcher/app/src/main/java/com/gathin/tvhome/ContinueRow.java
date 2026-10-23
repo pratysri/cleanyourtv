@@ -428,15 +428,31 @@ final class ContinueRow {
         // Hold OK: "Not mine", the show moves to the next person's Continue watching.
         card.setOnLongClickListener(v -> {
             if (!Profiles.enabled(activity) || item.appCard) return false;
-            String[] names = Profiles.names(activity);
-            int to = (Profiles.current(activity) + 1) % names.length;
-            Profiles.setOwner(activity, item.pkg, item.title, item.lastWatched, to);
-            android.widget.Toast.makeText(activity, activity.getString(R.string.moved_to, item.title, names[to]),
-                    android.widget.Toast.LENGTH_SHORT).show();
-            refresh();
+            confirmMove(item);
             return true;
         });
         return card;
+    }
+
+    /**
+     * "Not mine", asked first: a held or repeating OK key must never move shows by itself. (It once did: each move
+     * rebuilt the row, focus landed on the next card while OK still repeated, and that card moved too.)
+     */
+    private void confirmMove(ContinueWatching.Item item) {
+        String[] names = Profiles.names(activity);
+        int to = (Profiles.current(activity) + 1) % names.length;
+        new android.app.AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(item.title)
+                .setMessage(activity.getString(R.string.move_question, names[to]))
+                .setPositiveButton(R.string.move_confirm, (d, w) -> {
+                    Profiles.setOwner(activity, item.pkg, item.title, item.lastWatched, to);
+                    android.widget.Toast.makeText(activity, activity.getString(R.string.moved_to, item.title,
+                            names[to]), android.widget.Toast.LENGTH_SHORT).show();
+                    refresh();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+                .getButton(android.content.DialogInterface.BUTTON_NEGATIVE).requestFocus();   // safe default
     }
 
     private void open(ContinueWatching.Item item) {
