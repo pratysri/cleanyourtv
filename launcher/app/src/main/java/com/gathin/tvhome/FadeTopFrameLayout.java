@@ -16,7 +16,9 @@ import android.widget.FrameLayout;
  * the grid draws as before.
  */
 public final class FadeTopFrameLayout extends FrameLayout {
-    private static final float FADE_DP = 90f;
+    private static final float FADE_DP = 70f;
+    /** How much of a row is still visible right at the top edge: a gentle haze rather than a full dissolve. */
+    private static final int EDGE_ALPHA = 0x73;
     private final Paint mask = new Paint();
     private final int fade;
     private int maskFor = -1;
@@ -40,7 +42,7 @@ public final class FadeTopFrameLayout extends FrameLayout {
         canvas.restoreToCount(save);
         // The band: drawn into a small layer, then faded from clear at the top edge to solid.
         if (maskFor != fade) {
-            mask.setShader(new LinearGradient(0, 0, 0, fade, 0x00000000, 0xFF000000, Shader.TileMode.CLAMP));
+            mask.setShader(new LinearGradient(0, 0, 0, fade, EDGE_ALPHA << 24, 0xFF000000, Shader.TileMode.CLAMP));
             maskFor = fade;
         }
         int layer = canvas.saveLayer(0, 0, w, fade, null);

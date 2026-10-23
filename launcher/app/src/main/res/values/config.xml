@@ -341,11 +341,10 @@
     <bool name="weather">true</bool>
     <bool name="weather_fahrenheit">true</bool>
 
-    <!-- hisense-home fork: apps that keep their Continue watching private get one "Jump back in" card. -->
-    <string-array name="resume_apps" translatable="false">
-        <item>com.google.android.youtube.tv</item>
-        <item>com.peacocktv.peacockandroid</item>
-    </string-array>
+    <!-- hisense-home fork: apps that keep their Continue watching private get one "Jump back in" card. Empty for
+         now: the owner prefers no app-logo cards until the real shows can be shown. Add
+         com.google.android.youtube.tv or com.peacocktv.peacockandroid back to turn them on. -->
+    <string-array name="resume_apps" translatable="false" />
 
     <!-- hisense-home fork: apps gathered into one folder tile at the end of the grid (folder_name in strings). -->
     <string-array name="folder_apps" translatable="false">
