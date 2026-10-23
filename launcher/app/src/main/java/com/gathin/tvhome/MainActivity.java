@@ -199,6 +199,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static int lastFocused = 0;
     /** hisense-home fork: Continue watching above the dock; null when continue_watching is off. */
     private ContinueRow continueRow;
+    /** A new wallpaper: the frosted glass in the dock and the folder tile redraws from it. */
+    private final Runnable frostChanged = () -> {
+        if (grid == null) return;
+        grid.invalidate();
+        for (int i = 0; i < grid.getChildCount(); i++) invalidateTree(grid.getChildAt(i));
+    };
+
+    private static void invalidateTree(View v) {
+        v.invalidate();
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) invalidateTree(g.getChildAt(i));
+        }
+    }
     /** "Who's watching?" is due: at process start (boot) and whenever the screen comes back on. */
     // At boot (the process started within 15 minutes of it), not when an update or a memory squeeze restarted Home.
     private static boolean pickerPending = android.os.SystemClock.elapsedRealtime() < 15 * 60_000L;
@@ -208,7 +222,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         @Override public void onReceive(android.content.Context c, Intent i) {
             pickerPending = true;
             // The screen-on broadcast can land after Home has already resumed: then ask right here.
-            if (homeResumed && Profiles.enabled(MainActivity.this)) {
+            if (homeResumed && Profiles.enabled(MainActivity.this) && HomePrefs.pickerOnWake(MainActivity.this)
+                    && !SafeMode.on(MainActivity.this)) {
                 pickerPending = false;
                 pickerDue = true;
                 if (hasWindowFocus()) showPickerSoon();
@@ -363,6 +378,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SafeMode.install(this);   // hisense-home fork: crash safety net, before anything can crash
+        Frost.enabled = !SafeMode.on(this);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
@@ -398,7 +415,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
-        if (getResources().getBoolean(R.bool.continue_watching)) {
+        Frost.listen(frostChanged);
+        if (SafeMode.on(this)) {
+            android.widget.Toast.makeText(this, R.string.safe_mode_notice, android.widget.Toast.LENGTH_LONG).show();
+        }
+        if (HomePrefs.continueWatching(this) && !SafeMode.on(this)) {
             continueRow = new ContinueRow(this, root, new ContinueRow.Host() {
                 @Override public void onContinueFocused() {
                     hideGlass();
@@ -630,7 +651,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setOnClickListener(v -> {
             if (launcherSettingsButton) startActivityForResult(
                     new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-            else open(systemIntent(Settings.ACTION_SETTINGS));
+            // hisense-home fork: Home settings, whose first row is the TV's own settings.
+            else startActivity(new Intent(this, HomeSetupActivity.class));
         });
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
@@ -645,9 +667,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             registerReceiver(screenOnReceiver, new android.content.IntentFilter(Intent.ACTION_SCREEN_ON));
             screenOnRegistered = true;
         }
-        if (getResources().getBoolean(R.bool.weather) && !getString(R.string.latitude).isEmpty()) {
-            weather = new Weather(findViewById(R.id.weather), getString(R.string.latitude),
-                    getString(R.string.longitude), getResources().getBoolean(R.bool.weather_fahrenheit));
+        if (getResources().getBoolean(R.bool.weather) && !HomePrefs.latitude(this).isEmpty() && !SafeMode.on(this)) {
+            weather = new Weather(findViewById(R.id.weather), HomePrefs.latitude(this),
+                    HomePrefs.longitude(this), HomePrefs.fahrenheit(this));
+            setUpWeatherLine(findViewById(R.id.weather));
         }
         if (!cfg.showNetworkPill) btnWifi.setVisibility(View.GONE);
         showInputsPill = cfg.showInputsPill;
@@ -704,7 +727,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int firstButton = R.id.btnSearch;   // hisense-home fork: Search leads the top bar
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton) return true;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton) {
+                // hisense-home fork: past the first pill, the weather line (OK opens the forecast).
+                View wv = findViewById(R.id.weather);
+                if (!rtlMenuBar && wv.getVisibility() == View.VISIBLE && wv.isFocusable()) wv.requestFocus();
+                return true;
+            }
             if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton) return true;
             // hisense-home fork: step to the neighbouring visible pill. The focus finder could otherwise pick a
             // Continue watching card below instead of the pill beside this one.
@@ -868,7 +896,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         new Thread(() -> WatchStats.ingest(getApplicationContext()), "watch-stats").start();
         if (continueRow != null) continueRow.onResume();
         if (weather != null) weather.onResume();
-        if (pickerPending && Profiles.enabled(this)) {
+        if (pickerPending && Profiles.enabled(this) && HomePrefs.pickerOnWake(this) && !SafeMode.on(this)) {
             pickerPending = false;
             pickerDue = true;
             if (hasWindowFocus()) showPickerSoon();   // otherwise onWindowFocusChanged does it
@@ -1153,6 +1181,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onDestroy();
         if (continueRow != null) continueRow.onDestroy();
         if (weather != null) weather.onDestroy();
+        Frost.unlisten(frostChanged);
         if (screenOnRegistered) unregisterReceiver(screenOnReceiver);
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
@@ -1969,8 +1998,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         continueRow.setCompact(on, h - glimpse - 6 * density - continueRow.heightPx());
         float dockShift = on ? Math.max(0f, (h - glimpse) - lastDockTop) : 0f;
         grid.animate().translationY(dockShift).setDuration(on ? 420 : 320)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(2f))
+                // The dock's frosted glass samples the wallpaper at its place on screen: redraw as it slides.
+                .setUpdateListener(a -> grid.invalidate()).start();
         // The clock, top bar and sky stay as they are: only the row and the dock move.
+    }
+
+    /** The weather line takes focus (Left from the top bar) and opens the forecast panel. */
+    private void setUpWeatherLine(TextView wv) {
+        wv.setFocusable(true);
+        wv.setClickable(true);
+        int padH = (int) (12 * density), padV = (int) (6 * density);
+        wv.setPadding(padH, padV, padH, padV);
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) wv.getLayoutParams();
+        lp.setMarginStart(-padH);   // the text stays where it was; the highlight grows around it
+        wv.setLayoutParams(lp);
+        android.graphics.drawable.GradientDrawable glass = new android.graphics.drawable.GradientDrawable();
+        glass.setCornerRadius(18 * density);
+        glass.setColor(0x33FFFFFF);
+        glass.setStroke((int) Math.max(1, density), 0x80FFFFFF);
+        wv.setOnFocusChangeListener((v, f) -> v.setBackground(f ? glass : null));
+        wv.setOnClickListener(v -> WeatherPanel.show(this));
+        wv.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                findViewById(R.id.btnSearch).requestFocus();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (continueRow == null || !continueRow.focus()) focusTile(lastFocused % COLUMNS);
+                return true;
+            }
+            return keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_LEFT;
+        });
     }
 
     /** Search, listening straight away: there is usually no keyboard at a TV. */
@@ -2398,8 +2458,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             greeting.setText(festiveGreeting);
             greeting.setTextColor(liftTowardsWhite(festival.accentColor(), 0.25f));
         } else {
-            String fixed = getString(R.string.greeting_text);   // hisense-home fork
-            greeting.setText(!fixed.isEmpty() ? fixed : greetingName.isEmpty() ? getString(res)
+            // hisense-home fork: the greeting style chosen in Home settings.
+            int style = HomePrefs.greetingStyle(this);
+            String fixed = getString(R.string.greeting_text);
+            String who = Profiles.enabled(this) ? Profiles.currentName(this) : "";
+            if (style == 3) greeting.setText("");
+            else if (style == 1 && !who.isEmpty()) greeting.setText(getString(R.string.welcome_back, who));
+            else if (style == 2) greeting.setText(who.isEmpty() ? getString(res)
+                    : getString(R.string.greeting_with_name, getString(res), who));
+            else greeting.setText(!fixed.isEmpty() ? fixed : greetingName.isEmpty() ? getString(res)
                     : getString(R.string.greeting_with_name, getString(res), greetingName));
             greeting.setTextColor(greetingColor);
         }

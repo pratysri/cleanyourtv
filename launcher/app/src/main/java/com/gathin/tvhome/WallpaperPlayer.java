@@ -41,6 +41,8 @@ final class WallpaperPlayer {
     private final int height;
     /** wallpaper_dim as an ARGB black, painted into each picture once instead of a full-screen shade view. */
     private final int dimColor;
+    /** hisense-home fork: the frosted copy of the picture decoded last, handed to Frost when it is shown. */
+    private volatile Bitmap pendingFrost;
     /** The picture on screen, released once the next one has been drawn. */
     private Bitmap current;
     private boolean active;
@@ -223,6 +225,7 @@ final class WallpaperPlayer {
         Bitmap old = current;
         current = bitmap;
         image.setImageBitmap(bitmap);
+        Frost.set(pendingFrost, root.getWidth() > 0 ? root.getWidth() : width, root.getHeight() > 0 ? root.getHeight() : height);
         if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
     }
 
@@ -248,11 +251,16 @@ final class WallpaperPlayer {
             Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
             if (decoded == null) return null;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+            Bitmap frost = Frost.make(decoded);   // hisense-home fork: the frosted glass's copy
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
             Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);
-            if (gpu == null) return decoded;
+            if (gpu == null) {
+                pendingFrost = frost;
+                return decoded;
+            }
             decoded.recycle();
+            pendingFrost = frost;
             return gpu;
         } catch (Exception | OutOfMemoryError failure) {
             return null;

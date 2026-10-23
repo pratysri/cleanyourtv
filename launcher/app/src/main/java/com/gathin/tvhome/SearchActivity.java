@@ -88,6 +88,11 @@ public final class SearchActivity extends Activity {
         PROVIDERS.put(237, "com.sonyliv");                        // SonyLIV
     }
 
+    /** Every streaming app Search knows, for Home settings' "Services you pay for". */
+    static List<String> servicePackages() {
+        return new ArrayList<>(new java.util.LinkedHashSet<>(PROVIDERS.values()));
+    }
+
     /** Apps whose own search a title can be handed to as a link, when ACTION_SEARCH is not taken. */
     private static final Map<String, String> SEARCH_LINKS = new HashMap<>();
 
@@ -378,6 +383,7 @@ public final class SearchActivity extends Activity {
     /** Installed apps that stream (or show free with ads) this title in the US, in provider order. */
     private List<String> providers(Title t) {
         LinkedHashMap<String, Boolean> pkgs = new LinkedHashMap<>();
+        java.util.Set<String> unpaid = HomePrefs.unpaidServices(this);
         try {
             JSONObject json = get("https://api.themoviedb.org/3/" + t.kind + "/" + t.id + "/watch/providers");
             JSONObject us = json == null ? null : json.optJSONObject("results");
@@ -387,7 +393,8 @@ public final class SearchActivity extends Activity {
                     JSONArray arr = us.optJSONArray(group);
                     for (int i = 0; arr != null && i < arr.length(); i++) {
                         String pkg = PROVIDERS.get(arr.getJSONObject(i).optInt("provider_id"));
-                        if (pkg != null && installed(pkg)) pkgs.put(pkg, true);
+                        // Services nobody here pays for (Home settings) are left out, even when installed.
+                        if (pkg != null && installed(pkg) && !unpaid.contains(pkg)) pkgs.put(pkg, true);
                     }
                 }
             }

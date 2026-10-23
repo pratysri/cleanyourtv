@@ -1,3 +1,6 @@
 # Batch 4, launcher phase only: Google TV setup wizard claims HOME. It owns only the unused
 # older saved network; the active network belongs to android.uid.system.
 com.google.android.tungsten.setupwraith
+
+# Screensaver, set 2026-10-23: was com.google.android.apps.tv.dreamx/.service.Backdrop (Google ambient).
+# Undo: tools/tv.py "settings put secure screensaver_components com.google.android.apps.tv.dreamx/.service.Backdrop"

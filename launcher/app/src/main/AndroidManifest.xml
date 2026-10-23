@@ -214,5 +214,20 @@
             android:exported="false"
             android:windowSoftInputMode="adjustPan|stateVisible"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+            <!-- hisense-home fork: Home settings, and the aerial screensaver. -->
+        <activity
+            android:name=".HomeSetupActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+        <service
+            android:name=".AerialDream"
+            android:exported="true"
+            android:label="@string/aerial_dream_name"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

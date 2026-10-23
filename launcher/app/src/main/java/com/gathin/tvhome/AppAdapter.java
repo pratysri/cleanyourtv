@@ -220,7 +220,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.favourites = cfg.dockApps;
         this.fillDock = cfg.fillDock;
         this.hidden = new HashSet<>(cfg.hiddenApps);
-        java.util.Collections.addAll(folderApps, ctx.getResources().getStringArray(R.array.folder_apps));
+        // hisense-home fork: Home settings decides which apps sit in More Apps and which are hidden.
+        this.hidden.addAll(HomePrefs.hiddenApps(ctx));
+        folderApps.addAll(HomePrefs.folderApps(ctx));
         this.libraryPreload = new HashSet<>(cfg.libraryApps);
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
@@ -461,6 +463,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // The folder is glass all through: no dark card behind it (hisense-home fork).
         h.card.setBackground(e.kind == Entry.FOLDER
                 || e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
+        // hisense-home fork: the folder's glass draws in screen-true coordinates, so it fills its view exactly.
+        h.banner.setScaleType(e.kind == Entry.FOLDER ? ImageView.ScaleType.FIT_XY : ImageView.ScaleType.CENTER_CROP);
+        if (e.banner instanceof FolderDrawable) ((FolderDrawable) e.banner).setHost(h.banner);
         if (e.banner != null) {
             h.banner.setImageDrawable(e.banner);
             h.banner.setVisibility(View.VISIBLE);

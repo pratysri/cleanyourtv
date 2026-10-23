@@ -40,6 +40,12 @@ final class FolderDrawable extends Drawable {
     private final RectF r = new RectF();
 
     private final float density;
+    /** The view this draws in (with FIT_XY, so the bounds are that view's coordinates), for Frost. */
+    private android.view.View host;
+
+    void setHost(android.view.View host) {
+        this.host = host;
+    }
 
     FolderDrawable(List<Mini> apps, float density) {
         this.density = density;
@@ -56,6 +62,7 @@ final class FolderDrawable extends Drawable {
                 new int[]{0x33FFFFFF, 0x17FFFFFF, 0x0DFFFFFF}, new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
         float corner = AppAdapter.cornerRadius(b.width(), density);
         r.set(b);
+        Frost.draw(canvas, r, corner, host);   // the frosted landscape behind the tile, when there is one
         canvas.drawRoundRect(r, corner, corner, glass);
         float rimW = 1.5f * density;
         sheen.setStyle(Paint.Style.STROKE);

@@ -58,6 +58,8 @@ final class Profiles {
     /** The current person's own dock from profile_docks ("Name=pkg,pkg,..."), or null to keep dock_apps. */
     static java.util.List<String> dockApps(Context ctx) {
         if (!enabled(ctx)) return null;
+        java.util.List<String> chosen = HomePrefs.dock(ctx, current(ctx));   // picked on the TV wins
+        if (chosen != null && !chosen.isEmpty()) return chosen;
         String who = currentName(ctx);
         for (String line : ctx.getResources().getStringArray(R.array.profile_docks)) {
             int eq = line.indexOf('=');

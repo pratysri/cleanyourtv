@@ -132,6 +132,8 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             shaderTop = rect.top;
             shaderBottom = rect.bottom;
         }
+        // hisense-home fork: real frosted glass, the blurred wallpaper behind the band, under the tint and rim.
+        if (lightGlass) Frost.draw(c, rect, radius, parent);
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
     }

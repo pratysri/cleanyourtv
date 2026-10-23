@@ -72,8 +72,8 @@ public class SkyView extends View {
     /** Today's sunrise and sunset at the configured place, or null without one (fixed reference day). */
     @Nullable
     private int[] sunTimes() {
-        String lat = getContext().getString(R.string.latitude);
-        String lon = getContext().getString(R.string.longitude);
+        String lat = HomePrefs.latitude(getContext());   // hisense-home fork: the city chosen on the TV
+        String lon = HomePrefs.longitude(getContext());
         if (lat.isEmpty() || lon.isEmpty()) return null;
         try {
             return Sun.riseAndSet(LocalDate.now(), Double.parseDouble(lat), Double.parseDouble(lon),
