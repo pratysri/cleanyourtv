@@ -109,6 +109,12 @@ public final class SearchActivity extends Activity {
     private LinearLayout results;
     private String token;
     private final Runnable search = this::runSearch;
+    /** Opened with this extra (the top-bar Search, the remote's search key) it starts listening at once. */
+    static final String EXTRA_VOICE = "voice";
+    private static final int VOICE_REQUEST = 7;
+    private View mic;
+    /** After a voice search, focus moves to the first result as soon as there is one. */
+    private boolean focusFirstResult;
 
     private static final class Title {
         String name, year, kind, poster;
@@ -170,7 +176,17 @@ public final class SearchActivity extends Activity {
             if (first != null) first.requestFocus();
             return true;
         });
-        page.addView(box, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+        // The mic, ahead of the box: with no keyboard to hand, voice is the main way in.
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setClipChildren(false);
+        mic = micButton();
+        top.addView(mic, new LinearLayout.LayoutParams(dp(68), dp(68)));
+        LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        boxLp.leftMargin = dp(18);
+        top.addView(box, boxLp);
+        page.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         results = new LinearLayout(this);
@@ -184,11 +200,82 @@ public final class SearchActivity extends Activity {
         credit.setPadding(0, dp(28), 0, 0);
         page.addView(credit);
 
-        box.requestFocus();
-        main.postDelayed(() -> {
-            InputMethodManager imm = getSystemService(InputMethodManager.class);
-            if (imm != null) imm.showSoftInput(box, InputMethodManager.SHOW_IMPLICIT);
-        }, 300);
+        mic.requestFocus();
+        if (getIntent().getBooleanExtra(EXTRA_VOICE, false)) main.postDelayed(this::startVoice, 350);
+    }
+
+    // ---- voice -------------------------------------------------------------------------------------
+
+    private View micButton() {
+        ImageView b = new ImageView(this);
+        b.setImageResource(R.drawable.ic_mic);
+        b.setScaleType(ImageView.ScaleType.CENTER);
+        b.setFocusable(true);
+        b.setClickable(true);
+        b.setContentDescription("Search by voice");
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x33FFFFFF, 0x14FFFFFF});
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setStroke(Math.max(1, dp(1)), 0x4DFFFFFF);
+        b.setBackground(bg);
+        b.setOnFocusChangeListener((v, f) -> {
+            bg.setColors(f ? new int[]{0xF2FFFFFF, 0xD9FFFFFF} : new int[]{0x33FFFFFF, 0x14FFFFFF});
+            b.setColorFilter(f ? 0xFF111318 : Color.WHITE);
+            v.animate().scaleX(f ? 1.1f : 1f).scaleY(f ? 1.1f : 1f).setDuration(120).start();
+        });
+        b.setOnClickListener(v -> startVoice());
+        return b;
+    }
+
+    /** Google's voice input (the Assistant's recogniser, through the standard speech intent) fills the box. */
+    private void startVoice() {
+        Intent i = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say a movie, show or app")
+                .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        try {
+            startActivityForResult(i, VOICE_REQUEST);
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "Voice input isn\u2019t available on this TV", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != VOICE_REQUEST || result != RESULT_OK || data == null) return;
+        java.util.ArrayList<String> heard =
+                data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
+        if (heard == null || heard.isEmpty() || heard.get(0).trim().isEmpty()) return;
+        main.removeCallbacks(search);
+        box.setText(heard.get(0).trim());
+        box.setSelection(box.getText().length());
+        main.removeCallbacks(search);
+        focusFirstResult = true;
+        runSearch();
+    }
+
+    /** The remote's search (mic) key: listen again, wherever focus is. */
+    @Override public boolean onSearchRequested() {
+        startVoice();
+        return true;
+    }
+
+    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_SEARCH || keyCode == KeyEvent.KEYCODE_VOICE_ASSIST) {
+            startVoice();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    private void focusFirstIfAsked() {
+        if (!focusFirstResult) return;
+        View first = firstFocusable(results);
+        if (first != null) {
+            focusFirstResult = false;
+            first.requestFocus();
+        }
     }
 
     @Override protected void onDestroy() {
@@ -208,6 +295,7 @@ public final class SearchActivity extends Activity {
             results.addView(heading("Apps"));
             LinearLayout row = shelf();
             for (ResolveInfo ri : apps) row.addView(appTile(ri));
+            focusFirstIfAsked();
         }
         if (token.isEmpty()) return;
         net.execute(() -> {
@@ -227,6 +315,7 @@ public final class SearchActivity extends Activity {
                     row.addView(card);
                     cards.add(card);
                 }
+                focusFirstIfAsked();
                 // Where to watch, per title, as it arrives.
                 for (int i = 0; i < titles.size(); i++) {
                     Title t = titles.get(i);

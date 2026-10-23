@@ -200,7 +200,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** hisense-home fork: Continue watching above the dock; null when continue_watching is off. */
     private ContinueRow continueRow;
     /** "Who's watching?" is due: at process start (boot) and whenever the screen comes back on. */
-    private static boolean pickerPending = true;
+    // At boot (the process started within 15 minutes of it), not when an update or a memory squeeze restarted Home.
+    private static boolean pickerPending = android.os.SystemClock.elapsedRealtime() < 15 * 60_000L;
     private boolean screenOnRegistered;
     private boolean homeResumed;
     private final android.content.BroadcastReceiver screenOnReceiver = new android.content.BroadcastReceiver() {
@@ -729,7 +730,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnProfile.setOnKeyListener(pillKeys);
         View btnSearch = findViewById(R.id.btnSearch);
         btnSearch.setOnKeyListener(pillKeys);
-        btnSearch.setOnClickListener(v -> startActivity(new Intent(this, SearchActivity.class)));
+        btnSearch.setOnClickListener(v -> openSearch());
         btnLibraryTop.setOnKeyListener(pillKeys);
         if (advancedEffects) {
             for (View button : new View[]{btnInputs, btnWifi, btnProfile, btnReorder, btnLibraryTop, btnSettings}) {
@@ -1970,6 +1971,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.animate().translationY(dockShift).setDuration(on ? 420 : 320)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
         // The clock, top bar and sky stay as they are: only the row and the dock move.
+    }
+
+    /** Search, listening straight away: there is usually no keyboard at a TV. */
+    private void openSearch() {
+        startActivity(new Intent(this, SearchActivity.class).putExtra(SearchActivity.EXTRA_VOICE, true));
+    }
+
+    /** The remote's search (mic) key on Home opens voice search, when the remote sends that key to apps. */
+    @Override public boolean onSearchRequested() {
+        openSearch();
+        return true;
     }
 
     /** Set when "Who's watching?" should open as soon as Home has focus and a drawn frame to blur. */
