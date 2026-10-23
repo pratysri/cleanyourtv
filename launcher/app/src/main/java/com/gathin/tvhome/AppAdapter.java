@@ -62,7 +62,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static final class Entry {
-        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3;
+        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3, FOLDER = 4;
 
         final int kind;
         final String label;
@@ -190,6 +190,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private int docked, emptySlots;
     /** Never shown as tiles (res/values/config.xml, hidden_apps). */
     private final Set<String> hidden;
+    /** hisense-home fork: config.xml folder_apps, gathered into one folder tile; its apps, by name. */
+    private final Set<String> folderApps = new HashSet<>();
+    private final List<Entry> folderEntries = new ArrayList<>();
     /** Apps pre-seeded into the App library's "added" set (config.xml library_apps); empty by default. */
     private final Set<String> libraryPreload;
     private final boolean animations;
@@ -217,6 +220,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.favourites = cfg.dockApps;
         this.fillDock = cfg.fillDock;
         this.hidden = new HashSet<>(cfg.hiddenApps);
+        java.util.Collections.addAll(folderApps, ctx.getResources().getStringArray(R.array.folder_apps));
         this.libraryPreload = new HashSet<>(cfg.libraryApps);
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
@@ -265,6 +269,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         Map<String, Cards.Card> cardByPkg = new HashMap<>();
         for (Cards.Card c : cards) cardByPkg.put(c.pkg, c);
         List<Entry> fresh = new ArrayList<>();
+        List<Entry> folder = new ArrayList<>();
         // Some system apps declare two leanback entry points under one name (Sony's Timers & Clock on the
         // BRAVIA VU31), which would show as two identical tiles: keep the first per package and label.
         Set<String> seen = new HashSet<>();
@@ -286,11 +291,25 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             // The icon is only drawn (and sampled for the glow) when there is no banner, so a tile with a
             // banner skips loading and decoding it.
             Drawable icon = banner == null ? ri.loadIcon(pm) : null;
+            if (card == null && folderApps.contains(pkg)) {
+                // In the folder instead of the grid; its icon draws the folder tile's preview.
+                folder.add(new Entry(label, component, banner, icon != null ? icon : ri.loadIcon(pm)));
+                continue;
+            }
             if (card != null) {
                 fresh.add(new Entry(Entry.CARD, label, component, banner, icon, card.caption, card.accent));
             } else {
                 fresh.add(new Entry(label, component, banner, icon));
             }
+        }
+        folder.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
+        folderEntries.clear();
+        folderEntries.addAll(folder);
+        if (!folder.isEmpty()) {
+            List<Drawable> icons = new ArrayList<>();
+            for (Entry e : folder) icons.add(e.icon);
+            fresh.add(new Entry(Entry.FOLDER, ctx.getString(R.string.folder_name),
+                    new ComponentName(ctx, "folder.more_apps"), new FolderDrawable(icons), null, null, 0xFF8E9AAF));
         }
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
@@ -302,6 +321,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 if (fb < 0) return -1;
                 return Integer.compare(fa, fb);
             }
+            // The folder ends the grid unless the owner moved it.
+            boolean xa = a.kind == Entry.FOLDER, xb = b.kind == Entry.FOLDER;
+            if (xa != xb) return xa ? 1 : -1;
             // Cards come right after the configured dock apps, before the alphabetical grid.
             boolean ca = a.kind == Entry.CARD, cb = b.kind == Entry.CARD;
             if (ca != cb) return ca ? -1 : 1;
@@ -469,6 +491,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
     private void launch(Entry e) {
+        if (e.kind == Entry.FOLDER) {
+            if (ctx instanceof Activity) FolderDialog.show((Activity) ctx, e.label, new ArrayList<>(folderEntries));
+            return;
+        }
         if (e.kind == Entry.HOME_SETTINGS) {
             ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

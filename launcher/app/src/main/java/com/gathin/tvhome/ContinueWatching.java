@@ -62,6 +62,8 @@ final class ContinueWatching {
         final float progress;
         /** True when the art is a wide (16:9 or 3:2) image rather than a portrait poster. */
         final boolean wideArt;
+        /** A "Jump back in" card for an app that shares no shows: opens the app, art is its banner. */
+        boolean appCard;
 
         Item(String pkg, String title, String subtitle, String art, String intentUri, long lastWatched,
              float progress, boolean wideArt) {
@@ -132,7 +134,52 @@ final class ContinueWatching {
         } catch (RuntimeException e) {
             Log.w(TAG, "Could not read Watch Next: " + e);
         }
-        return merge(rows, limit);
+        List<Item> shows = merge(rows, limit);
+        // Apps that keep their Watch Next rows private (YouTube, Peacock) get one card that reopens the app.
+        Set<String> withShows = new HashSet<>();
+        for (Item i : shows) withShows.add(i.pkg);
+        List<Item> all = new ArrayList<>(shows);
+        all.addAll(appCards(ctx, withShows));
+        all.sort((a, b) -> Long.compare(b.lastWatched, a.lastWatched));
+        return all.size() > limit ? new ArrayList<>(all.subList(0, limit)) : all;
+    }
+
+    /** Apps opened within this many days get a "Jump back in" card. */
+    static final long APP_CARD_DAYS = 14;
+
+    /** One card per config.xml resume_apps package used lately that has no show in the row; empty without usage access. */
+    static List<Item> appCards(Context ctx, Set<String> withShows) {
+        List<Item> out = new ArrayList<>();
+        String[] pkgs = ctx.getResources().getStringArray(R.array.resume_apps);
+        if (pkgs.length == 0) return out;
+        android.app.usage.UsageStatsManager usm = ctx.getSystemService(android.app.usage.UsageStatsManager.class);
+        if (usm == null) return out;
+        long now = System.currentTimeMillis();
+        Map<String, android.app.usage.UsageStats> stats;
+        try {
+            stats = usm.queryAndAggregateUsageStats(now - APP_CARD_DAYS * 24 * 60 * 60 * 1000, now);
+        } catch (RuntimeException e) {
+            return out;
+        }
+        PackageManager pm = ctx.getPackageManager();
+        for (String pkg : pkgs) {
+            android.app.usage.UsageStats u = stats == null ? null : stats.get(pkg);
+            if (withShows.contains(pkg) || u == null || u.getLastTimeUsed() <= 0
+                    || u.getTotalTimeInForeground() < 60_000 || launchIntent(pm, pkg) == null) continue;
+            String name;
+            try {
+                name = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+            } catch (PackageManager.NameNotFoundException e) {
+                continue;
+            }
+            CharSequence ago = android.text.format.DateUtils.getRelativeTimeSpanString(u.getLastTimeUsed(), now,
+                    android.text.format.DateUtils.MINUTE_IN_MILLIS);
+            Item item = new Item(pkg, name, ctx.getString(R.string.jump_back_in, ago), null, null,
+                    u.getLastTimeUsed(), -1f, true);
+            item.appCard = true;
+            out.add(item);
+        }
+        return out;
     }
 
     /** Newest first, one entry per show (its latest episode), at most PER_APP per app, at most limit in all. */

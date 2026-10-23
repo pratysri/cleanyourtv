@@ -315,7 +315,12 @@ final class ContinueRow {
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
-        loadArt(item.art, image);
+        if (item.appCard) {
+            // The app's own TV banner, which already carries its logo.
+            image.setImageDrawable(banner(item.pkg));
+        } else {
+            loadArt(item.art, image);
+        }
 
         View scrim = new View(activity);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -324,6 +329,7 @@ final class ContinueRow {
                 Gravity.BOTTOM));
 
         TextView chip = new TextView(activity);
+        chip.setVisibility(item.appCard ? View.GONE : View.VISIBLE);
         chip.setText(appName(item.pkg).toUpperCase(Locale.getDefault()));
         chip.setTextColor(Color.WHITE);
         chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
@@ -350,7 +356,7 @@ final class ContinueRow {
         title.setTypeface(medium);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        text.addView(title);
+        if (!item.appCard) text.addView(title);   // an app card's banner already shows its name
         if (item.subtitle != null) {
             TextView sub = new TextView(activity);
             sub.setText(item.subtitle);
@@ -436,6 +442,18 @@ final class ContinueRow {
                     // Nothing else to try.
                 }
             }
+        }
+    }
+
+    private android.graphics.drawable.Drawable banner(String pkg) {
+        PackageManager pm = activity.getPackageManager();
+        try {
+            Intent launch = ContinueWatching.launchIntent(pm, pkg);
+            android.graphics.drawable.Drawable d = launch == null ? null : pm.getActivityBanner(launch);
+            if (d == null) d = pm.getApplicationBanner(pkg);
+            return d != null ? d : pm.getApplicationIcon(pkg);
+        } catch (PackageManager.NameNotFoundException e) {
+            return null;
         }
     }
 

@@ -340,4 +340,28 @@
     <!-- hisense-home fork: weather under the clock for latitude/longitude above, from Open-Meteo. -->
     <bool name="weather">true</bool>
     <bool name="weather_fahrenheit">true</bool>
+
+    <!-- hisense-home fork: apps that keep their Continue watching private get one "Jump back in" card. -->
+    <string-array name="resume_apps" translatable="false">
+        <item>com.google.android.youtube.tv</item>
+        <item>com.peacocktv.peacockandroid</item>
+    </string-array>
+
+    <!-- hisense-home fork: apps gathered into one folder tile at the end of the grid (folder_name in strings). -->
+    <string-array name="folder_apps" translatable="false">
+        <item>com.vt.tv.singlelisten</item>                 <!-- BT Music -->
+        <item>com.vt.tv.ai_sense</item>                     <!-- Smart Camera -->
+        <item>com.haystack.android</item>                   <!-- Haystack News -->
+        <item>com.vt.hishow</item>                          <!-- Family Moment -->
+        <item>com.hisense.odinbrowser</item>                <!-- Odin Browser -->
+        <item>in.startv.hotstar</item>                      <!-- JioHotstar -->
+        <item>net.vidaatv.hisense.android.tv</item>         <!-- Hisense Channels -->
+        <item>com.vt.tv.mediacenter</item>                  <!-- USB Media Player -->
+        <item>com.google.android.play.games</item>          <!-- Google Play Games -->
+        <item>tv.pluto.android</item>                       <!-- Pluto TV -->
+        <item>com.graymatrix.did</item>                     <!-- ZEE5 -->
+        <item>com.sonyliv</item>                            <!-- SonyLIV -->
+        <item>com.vt.tv.mobiledeviceconnectiontips</item>   <!-- Screen casting tips -->
+        <item>com.tubitv</item>                             <!-- Tubi -->
+    </string-array>
 </resources>
