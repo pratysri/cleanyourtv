@@ -321,6 +321,14 @@
                 android:clipToPadding="false"
                 android:orientation="horizontal">
 
+                <!-- hisense-home fork: Search, for apps, movies and shows. -->
+                <TextView
+                    android:id="@+id/btnSearch"
+                    style="@style/TopButtonIcon"
+                    android:contentDescription="@string/search"
+                    android:drawableStart="@drawable/ic_search"
+                    android:nextFocusDown="@+id/grid" />
+
                 <TextView
                     android:id="@+id/btnInputs"
                     style="@style/TopButton"

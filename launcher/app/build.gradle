@@ -13,6 +13,16 @@ android {
         targetSdk 34
         versionCode 7
         versionName '2.6'
+        // hisense-home fork: the TMDB read access token for Search, from a private file git ignores
+        // (my-tv/tmdb.properties, tmdb_read_token=...). Without it Search still finds installed apps.
+        def tmdbFile = rootProject.file('../my-tv/tmdb.properties')
+        def tmdbToken = ''
+        if (tmdbFile.exists()) {
+            def props = new Properties()
+            tmdbFile.withInputStream { props.load(it) }
+            tmdbToken = (props.getProperty('tmdb_read_token') ?: '').trim()
+        }
+        resValue 'string', 'tmdb_read_token', tmdbToken
     }
 
     buildTypes {

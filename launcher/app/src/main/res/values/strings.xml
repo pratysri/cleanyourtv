@@ -152,6 +152,8 @@
     <string name="moved_to">Moved %1$s to %2$s\'s Continue watching</string>
     <string name="move_question">Not yours? Move it to %1$s\'s Continue watching.</string>
     <string name="move_confirm">Move</string>
+    <string name="recap_name" translatable="false">TV Recap</string>
+    <string name="search">Search</string>
     <string name="folder_name">More Apps</string>
     <string name="profile_switched">Switched to %1$s</string>
 </resources>

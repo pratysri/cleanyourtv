@@ -197,5 +197,22 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/input_key_service" />
         </service>
+            <!-- hisense-home fork: TV Recap (watch time) with its own Home tile, and Search. -->
+        <activity
+            android:name=".RecapActivity"
+            android:exported="true"
+            android:label="@string/recap_name"
+            android:banner="@drawable/banner_recap"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".SearchActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustPan|stateVisible"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
     </application>
 </manifest>

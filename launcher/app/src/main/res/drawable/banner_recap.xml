@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV Recap's tile (hisense-home fork): a deep blue-to-violet card with a small bar chart. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:width="320dp" android:height="180dp">
+        <shape>
+            <gradient android:angle="315" android:startColor="#FF3D7BFF" android:centerColor="#FF5A4FCF"
+                android:endColor="#FF1B1F3A" />
+        </shape>
+    </item>
+    <item android:width="320dp" android:height="180dp" android:drawable="@drawable/ic_recap" />
+</layer-list>

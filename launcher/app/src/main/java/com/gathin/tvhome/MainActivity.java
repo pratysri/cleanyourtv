@@ -700,7 +700,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 focusTile(lastFocused % COLUMNS);
                 return true;
             }
-            int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
+            int firstButton = R.id.btnSearch;   // hisense-home fork: Search leads the top bar
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton) return true;
@@ -727,6 +727,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setOnKeyListener(pillKeys);
         btnReorder.setOnKeyListener(pillKeys);
         btnProfile.setOnKeyListener(pillKeys);
+        View btnSearch = findViewById(R.id.btnSearch);
+        btnSearch.setOnKeyListener(pillKeys);
+        btnSearch.setOnClickListener(v -> startActivity(new Intent(this, SearchActivity.class)));
         btnLibraryTop.setOnKeyListener(pillKeys);
         if (advancedEffects) {
             for (View button : new View[]{btnInputs, btnWifi, btnProfile, btnReorder, btnLibraryTop, btnSettings}) {
@@ -861,6 +864,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         homeResumed = true;
+        new Thread(() -> WatchStats.ingest(getApplicationContext()), "watch-stats").start();
         if (continueRow != null) continueRow.onResume();
         if (weather != null) weather.onResume();
         if (pickerPending && Profiles.enabled(this)) {

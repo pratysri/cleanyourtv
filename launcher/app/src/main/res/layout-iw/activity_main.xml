@@ -379,6 +379,14 @@
                     android:text="@string/inputs"
                     android:drawableStart="@drawable/ic_input"
                     android:nextFocusDown="@+id/grid" />
+
+                <!-- hisense-home fork: Search, for apps, movies and shows. -->
+                <TextView
+                    android:id="@+id/btnSearch"
+                    style="@style/TopButtonIcon"
+                    android:contentDescription="@string/search"
+                    android:drawableStart="@drawable/ic_search"
+                    android:nextFocusDown="@+id/grid" />
             </LinearLayout>
         </RelativeLayout>
 
