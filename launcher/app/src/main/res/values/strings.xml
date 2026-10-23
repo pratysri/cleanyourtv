@@ -147,6 +147,7 @@
     <string name="last_opened">Last opened %1$s</string>
     <string name="continue_watching">Continue watching</string>
     <string name="jump_back_in">Jump back in · %1$s</string>
+    <string name="just_now">just now</string>
     <string name="folder_name">More Apps</string>
     <string name="profile_switched">Switched to %1$s</string>
 </resources>

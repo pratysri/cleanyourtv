@@ -27,21 +27,47 @@ import android.widget.Toast;
 import java.util.List;
 
 /**
- * The folder's panel (hisense-home fork): its apps in a grid over a dimmed Home. OK opens an app, Back closes.
+ * The folder's panel (hisense-home fork), after tvOS: Home blurred and darkened behind, the folder's name large at
+ * the top, its apps as full-size tiles five to a row. The focused tile lifts with a shadow and shows its name; the
+ * others show none. OK opens an app, Back closes.
  */
 final class FolderDialog {
-    private static final int COLUMNS = 5, TILE_W = 160, TILE_H = 90, GAP = 22;
+    private static final int COLUMNS = 5, TILE_W = 146, TILE_H = 82, GAP = 30, ROW_GAP = 16;
 
     private FolderDialog() { }
 
+    /**
+     * Copies the screen first (PixelCopy reads the window's surface, hardware-decoded wallpaper included, which a
+     * software draw of the view tree cannot), then opens the panel over a blurred version of it.
+     */
     static void show(Activity activity, String title, List<AppAdapter.Entry> apps) {
+        View root = activity.getWindow().getDecorView();
+        int w = root.getWidth(), h = root.getHeight();
+        if (w <= 0 || h <= 0) {
+            show(activity, title, apps, null);
+            return;
+        }
+        try {
+            android.graphics.Bitmap shot = android.graphics.Bitmap.createBitmap(w / 4, h / 4,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.view.PixelCopy.request(activity.getWindow(), shot, result -> {
+                if (activity.isFinishing() || activity.isDestroyed()) return;
+                show(activity, title, apps, result == android.view.PixelCopy.SUCCESS ? blur(activity, shot) : null);
+            }, new android.os.Handler(android.os.Looper.getMainLooper()));
+        } catch (RuntimeException | OutOfMemoryError e) {
+            show(activity, title, apps, null);
+        }
+    }
+
+    private static void show(Activity activity, String title, List<AppAdapter.Entry> apps, Drawable backdrop) {
         float density = activity.getResources().getDisplayMetrics().density;
         Dialog dialog = new Dialog(activity, android.R.style.Theme_DeviceDefault_NoActionBar_Fullscreen);
         Window window = dialog.getWindow();
         if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(0xD9000000));
-            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            window.setDimAmount(0.3f);
+            // This TV has no window blur, so blur a small snapshot of Home instead: drawn at 1/16 size and
+            // stretched back with filtering, under a dark veil.
+            window.setBackgroundDrawable(backdrop != null ? backdrop : new ColorDrawable(0xE6000000));
+            window.setWindowAnimations(android.R.style.Animation_Dialog);
         }
         Typeface medium = font(activity, R.font.outfit_medium), light = font(activity, R.font.outfit_light);
 
@@ -56,9 +82,10 @@ final class FolderDialog {
         TextView heading = new TextView(activity);
         heading.setText(title);
         heading.setTextColor(Color.WHITE);
-        heading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
-        heading.setTypeface(light);
-        heading.setPadding(0, 0, 0, Math.round(26 * density));
+        heading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+        heading.setTypeface(medium);
+        heading.setGravity(Gravity.CENTER_HORIZONTAL);
+        heading.setPadding(0, 0, 0, Math.round(34 * density));
         panel.addView(heading);
 
         LinearLayout row = null;
@@ -71,7 +98,7 @@ final class FolderDialog {
                 row.setClipToPadding(false);
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT);
-                rlp.bottomMargin = Math.round(GAP * density);
+                rlp.bottomMargin = Math.round(ROW_GAP * density);
                 panel.addView(row, rlp);
             }
             View tile = tile(activity, dialog, apps.get(i), density, medium, i % COLUMNS > 0);
@@ -132,16 +159,12 @@ final class FolderDialog {
             card.addView(art, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
         }
         GradientDrawable ringShape = new GradientDrawable();
-        ringShape.setColor(Color.TRANSPARENT);
-        ringShape.setStroke(Math.round(3 * density), Color.WHITE);
+        // tvOS focus: no outline, the tile lifts toward you with a soft shadow and a faint top sheen.
+        ringShape.setColors(new int[]{0x1FFFFFFF, 0x00FFFFFF});
+        ringShape.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
         ringShape.setCornerRadius(radius);
         ringShape.setAlpha(0);
         card.setForeground(ringShape);
-        card.setOnFocusChangeListener((v, focused) -> {
-            ringShape.setAlpha(focused ? 255 : 0);
-            v.animate().scaleX(focused ? 1.08f : 1f).scaleY(focused ? 1.08f : 1f)
-                    .translationZ(focused ? 10 * density : 0f).setDuration(140).start();
-        });
         card.setOnClickListener(v -> {
             dialog.dismiss();
             open(activity, e);
@@ -156,10 +179,38 @@ final class FolderDialog {
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         name.setGravity(Gravity.CENTER_HORIZONTAL);
-        name.setPadding(0, Math.round(10 * density), 0, 0);
+        name.setPadding(0, Math.round(14 * density), 0, 0);
+        name.setAlpha(0f);
+        card.setOnFocusChangeListener((v, focused) -> {
+            ringShape.setAlpha(focused ? 255 : 0);
+            v.animate().scaleX(focused ? 1.13f : 1f).scaleY(focused ? 1.13f : 1f)
+                    .translationZ(focused ? 22 * density : 0f).setDuration(180)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+            name.animate().alpha(focused ? 1f : 0f).setDuration(160).start();
+        });
         cell.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         return cell;
+    }
+
+    /** A soft blur of the quarter-size screenshot: shrunk twice more with filtering, stretched back, darkened. */
+    private static Drawable blur(Activity activity, android.graphics.Bitmap shot) {
+        try {
+            int w = shot.getWidth(), h = shot.getHeight();
+            android.graphics.Bitmap a = android.graphics.Bitmap.createScaledBitmap(shot, Math.max(1, w / 4),
+                    Math.max(1, h / 4), true);
+            android.graphics.Bitmap b = android.graphics.Bitmap.createScaledBitmap(a, Math.max(1, w / 8),
+                    Math.max(1, h / 8), true);
+            android.graphics.Bitmap c = android.graphics.Bitmap.createScaledBitmap(b, Math.max(1, w / 4),
+                    Math.max(1, h / 4), true);
+            shot.recycle();
+            android.graphics.drawable.BitmapDrawable d =
+                    new android.graphics.drawable.BitmapDrawable(activity.getResources(), c);
+            d.setFilterBitmap(true);
+            return new android.graphics.drawable.LayerDrawable(new Drawable[]{d, new ColorDrawable(0x8C000000)});
+        } catch (RuntimeException | OutOfMemoryError e) {
+            return null;
+        }
     }
 
     private static void open(Activity activity, AppAdapter.Entry e) {

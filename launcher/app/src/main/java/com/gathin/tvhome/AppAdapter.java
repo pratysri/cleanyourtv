@@ -306,10 +306,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         folderEntries.clear();
         folderEntries.addAll(folder);
         if (!folder.isEmpty()) {
-            List<Drawable> icons = new ArrayList<>();
-            for (Entry e : folder) icons.add(e.icon);
+            List<FolderDrawable.Mini> minis = new ArrayList<>();
+            for (Entry e : folder) minis.add(new FolderDrawable.Mini(e.banner, e.icon));
             fresh.add(new Entry(Entry.FOLDER, ctx.getString(R.string.folder_name),
-                    new ComponentName(ctx, "folder.more_apps"), new FolderDrawable(icons), null, null, 0xFF8E9AAF));
+                    new ComponentName(ctx, "folder.more_apps"), new FolderDrawable(minis), null, null, 0xFF8E9AAF));
         }
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.

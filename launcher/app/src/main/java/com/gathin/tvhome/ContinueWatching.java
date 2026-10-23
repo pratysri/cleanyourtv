@@ -172,7 +172,8 @@ final class ContinueWatching {
             } catch (PackageManager.NameNotFoundException e) {
                 continue;
             }
-            CharSequence ago = android.text.format.DateUtils.getRelativeTimeSpanString(u.getLastTimeUsed(), now,
+            CharSequence ago = now - u.getLastTimeUsed() < 60_000 ? ctx.getString(R.string.just_now)
+                    : android.text.format.DateUtils.getRelativeTimeSpanString(u.getLastTimeUsed(), now,
                     android.text.format.DateUtils.MINUTE_IN_MILLIS);
             Item item = new Item(pkg, name, ctx.getString(R.string.jump_back_in, ago), null, null,
                     u.getLastTimeUsed(), -1f, true);

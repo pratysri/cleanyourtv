@@ -363,5 +363,6 @@
         <item>com.sonyliv</item>                            <!-- SonyLIV -->
         <item>com.vt.tv.mobiledeviceconnectiontips</item>   <!-- Screen casting tips -->
         <item>com.tubitv</item>                             <!-- Tubi -->
+        <item>com.instagram.airwave</item>                  <!-- Instagram -->
     </string-array>
 </resources>
