@@ -67,6 +67,7 @@ final class ContinueRow {
     };
 
     final LinearLayout container;
+    private View scrim;
     private final HorizontalScrollView scroller;
     private final LinearLayout cards;
     private final List<ContinueWatching.Item> items = new ArrayList<>();
@@ -121,6 +122,14 @@ final class ContinueRow {
         // Above the sky, wallpaper and ambient glow (so the glow does not tint the art), below the top bar and grid.
         View hero = root.findViewById(R.id.hero);
         int at = hero == null ? 1 : root.indexOfChild(hero) + 1;
+        // Compact mode's fade: clear over the top half, dark under the row and dock.
+        scrim = new View(activity);
+        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x00000000, 0x00000000, 0x8C000000, 0xE6000000}));
+        scrim.setAlpha(0f);
+        scrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        root.addView(scrim, at++, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(container, at, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP));
     }
@@ -202,9 +211,44 @@ final class ContinueRow {
     /** Parks the row so its bottom edge sits at y (root coordinates), clear of the clock above. */
     void placeBottomAt(float y, float minTop) {
         bottomY = y;
-        float top = Math.max(minTop, y - heightPx());
-        container.setY(top);
+        int top = Math.round(Math.max(minTop, y - heightPx()));
+        // The resting place is the top margin; compact mode slides from it with translationY.
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) container.getLayoutParams();
+        if (lp.topMargin != top) {
+            lp.topMargin = top;
+            container.setLayoutParams(lp);
+        }
+        normalTop = top;
         updateVisibility();
+    }
+
+    // ---- Apple TV style compact mode ---------------------------------------------------------------
+
+    private int normalTop = 0;
+    private boolean compact = false;
+    private android.animation.ObjectAnimator slide, fade;
+
+    boolean isCompact() {
+        return compact;
+    }
+
+    /**
+     * Compact: the row slides down so its label starts at compactTop (the screen's middle), over a soft dark
+     * fade, leaving the wallpaper alone in the top half. Off: back to its resting place above the dock.
+     */
+    void setCompact(boolean on, float compactTop) {
+        if (compact == on) return;
+        compact = on;
+        if (slide != null) slide.cancel();
+        if (fade != null) fade.cancel();
+        float to = on ? compactTop - normalTop : 0f;
+        slide = android.animation.ObjectAnimator.ofFloat(container, View.TRANSLATION_Y, to);
+        slide.setDuration(on ? 420 : 320);
+        slide.setInterpolator(new android.view.animation.DecelerateInterpolator(2f));
+        slide.start();
+        fade = android.animation.ObjectAnimator.ofFloat(scrim, View.ALPHA, on ? 1f : 0f);
+        fade.setDuration(on ? 420 : 260);
+        fade.start();
     }
 
     /** Shown while focus is on the dock, the row or the top bar; hidden while the grid below is scrolled up. */

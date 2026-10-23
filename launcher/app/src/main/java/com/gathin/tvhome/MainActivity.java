@@ -388,11 +388,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     hideGlass();
                     hideHero();
                     continueRow.setShown(true);
+                    setCompact(true);
                 }
                 @Override public void focusDockFromRow() {
                     focusTile(lastFocused < COLUMNS ? lastFocused : 0);
                 }
                 @Override public void focusTopBarFromRow() {
+                    setCompact(false);
                     (btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton()).requestFocus();
                 }
             });
@@ -405,6 +407,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         wallpaperPlayer = new WallpaperPlayer(this, root, cfg);
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
+        skyAlpha = cfg.skyIntensity / 100f;
         glass = findViewById(R.id.glass);
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);
@@ -1579,7 +1582,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             showHero(position, scroll ? r.top - dy : r.top);
             if (continueRow != null) {
+                setCompact(false);
                 float dockTop = (scroll ? r.top - dy : r.top) - 6 * density;
+                lastDockTop = dockTop;
                 Rect top = new Rect(0, 0, leftBlockView().getWidth(), leftBlockView().getHeight());
                 root.offsetDescendantRectToMyCoords(leftBlockView(), top);
                 continueRow.placeBottomAt(dockTop - 26 * density, top.bottom + 14 * density);
@@ -1919,6 +1924,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             ambient.setAlpha(0f);
             heroArt.setAlpha(0f);
         }
+    }
+
+    // ---- hisense-home fork: Apple TV style compact mode ----------------------------------------------
+
+    /** Where the dock band's top sat when last placed (root coordinates), for compact mode's slide. */
+    private float lastDockTop = -1;
+    /** The sky's own opacity (sky_intensity), restored when compact mode ends. */
+    private float skyAlpha = 0f;
+
+    /**
+     * With focus on Continue watching, the row and the dock slide into the lower half (the dock just peeking at
+     * the bottom edge) and the clock, top bar and sky tint fade, so the wallpaper has the top of the screen.
+     */
+    private void setCompact(boolean on) {
+        if (continueRow == null || continueRow.isCompact() == on || lastDockTop < 0) return;
+        float h = root.getHeight();
+        continueRow.setCompact(on, h * 0.5f);
+        float dockShift = on ? Math.max(0f, (h - 64 * density) - lastDockTop) : 0f;
+        grid.animate().translationY(dockShift).setDuration(on ? 420 : 320)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+        View top = (View) findViewById(R.id.topButtons).getParent();
+        top.animate().alpha(on ? 0f : 1f).setDuration(on ? 300 : 260).start();
+        if (sky != null) sky.animate().alpha(on ? 0f : skyAlpha).setDuration(500).start();
     }
 
     private View leftBlockView() {

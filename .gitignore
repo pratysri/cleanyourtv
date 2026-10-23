@@ -19,3 +19,6 @@ traces/
 *.aab
 launcher/hs_err_pid*.log
 launcher/replay_pid*.log
+
+# hisense-home fork: Apple aerial stills, personal use on this TV only (Apple content, never committed)
+my-tv/aerials-local/
