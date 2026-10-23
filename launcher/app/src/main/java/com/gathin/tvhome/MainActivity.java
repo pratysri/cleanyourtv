@@ -202,9 +202,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** "Who's watching?" is due: at process start (boot) and whenever the screen comes back on. */
     private static boolean pickerPending = true;
     private boolean screenOnRegistered;
+    private boolean homeResumed;
     private final android.content.BroadcastReceiver screenOnReceiver = new android.content.BroadcastReceiver() {
         @Override public void onReceive(android.content.Context c, Intent i) {
             pickerPending = true;
+            // The screen-on broadcast can land after Home has already resumed: then ask right here.
+            if (homeResumed && Profiles.enabled(MainActivity.this)) {
+                pickerPending = false;
+                pickerDue = true;
+                if (hasWindowFocus()) showPickerSoon();
+            }
         }
     };
     private Weather weather;
@@ -853,6 +860,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        homeResumed = true;
         if (continueRow != null) continueRow.onResume();
         if (weather != null) weather.onResume();
         if (pickerPending && Profiles.enabled(this)) {
@@ -1071,6 +1079,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onPause() {
         super.onPause();
+        homeResumed = false;
         if (continueRow != null) continueRow.onPause();
         if (weather != null) weather.onPause();
         root.removeCallbacks(showIdleClock);
