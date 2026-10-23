@@ -127,6 +127,8 @@ final class ContinueWatching {
                 // Prefer the wide thumbnail for a landscape card; fall back to the poster.
                 String art = !isBlank(thumb) ? thumb : poster;
                 boolean wide = !isBlank(thumb) || c.getInt(12) <= 2;   // ASPECT_RATIO 16:9=0, 3:2=1, 4:3=2
+                // Personal rows: only this person's shows, plus shared ones from before profiles.
+                if (!Profiles.visible(ctx, pkg, title, engaged)) continue;
                 rows.add(new Item(pkg, title.trim(), subtitle(c.getString(2), c.getString(3), c.getString(4)),
                         isBlank(art) ? null : art, isBlank(c.getString(7)) ? null : c.getString(7), engaged,
                         progress(c.getLong(10), c.getLong(11)), wide));

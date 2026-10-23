@@ -199,6 +199,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static int lastFocused = 0;
     /** hisense-home fork: Continue watching above the dock; null when continue_watching is off. */
     private ContinueRow continueRow;
+    /** "Who's watching?" is due: at process start (boot) and whenever the screen comes back on. */
+    private static boolean pickerPending = true;
+    private boolean screenOnRegistered;
+    private final android.content.BroadcastReceiver screenOnReceiver = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context c, Intent i) {
+            pickerPending = true;
+        }
+    };
     private Weather weather;
     private TextView btnProfile;
     /** App of the last focused tile, so focus follows it when the app list changes. */
@@ -624,12 +632,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (Profiles.enabled(this)) {
             btnProfile.setText(Profiles.currentName(this));
             btnProfile.setVisibility(View.VISIBLE);
-            btnProfile.setOnClickListener(v -> {
-                String who = Profiles.next(this);
-                android.widget.Toast.makeText(this, getString(R.string.profile_switched, who),
-                        android.widget.Toast.LENGTH_SHORT).show();
-                recreate();
-            });
+            btnProfile.setOnClickListener(v -> showProfilePicker());
+            Profiles.ensureLog(this);
+            registerReceiver(screenOnReceiver, new android.content.IntentFilter(Intent.ACTION_SCREEN_ON));
+            screenOnRegistered = true;
         }
         if (getResources().getBoolean(R.bool.weather) && !getString(R.string.latitude).isEmpty()) {
             weather = new Weather(findViewById(R.id.weather), getString(R.string.latitude),
@@ -849,6 +855,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onResume();
         if (continueRow != null) continueRow.onResume();
         if (weather != null) weather.onResume();
+        if (pickerPending && Profiles.enabled(this)) {
+            pickerPending = false;
+            pickerDue = true;
+            if (hasWindowFocus()) showPickerSoon();   // otherwise onWindowFocusChanged does it
+        }
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1115,6 +1126,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && pickerDue) showPickerSoon();
         if (hasFocus) {
             startPendingSettingsReorder();
             if (libraryFocusPending && appLibrary == null) focusLibrary();
@@ -1127,6 +1139,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onDestroy();
         if (continueRow != null) continueRow.onDestroy();
         if (weather != null) weather.onDestroy();
+        if (screenOnRegistered) unregisterReceiver(screenOnReceiver);
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
@@ -1944,6 +1957,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.animate().translationY(dockShift).setDuration(on ? 420 : 320)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
         // The clock, top bar and sky stay as they are: only the row and the dock move.
+    }
+
+    /** Set when "Who's watching?" should open as soon as Home has focus and a drawn frame to blur. */
+    private boolean pickerDue;
+
+    private void showPickerSoon() {
+        root.postDelayed(() -> {
+            if (!pickerDue || isFinishing() || isDestroyed() || !hasWindowFocus()) return;
+            pickerDue = false;
+            showProfilePicker();
+        }, 500);
+    }
+
+    /** Who's watching? Picking someone else switches the dock, order and Continue watching to theirs. */
+    private void showProfilePicker() {
+        ProfilePicker.show(this, who -> {
+            if (who == Profiles.current(this)) return;
+            Profiles.set(this, who);
+            android.widget.Toast.makeText(this, getString(R.string.profile_switched, Profiles.currentName(this)),
+                    android.widget.Toast.LENGTH_SHORT).show();
+            recreate();
+        });
     }
 
     private View leftBlockView() {

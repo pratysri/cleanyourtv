@@ -41,10 +41,15 @@ final class FolderDialog {
      * software draw of the view tree cannot), then opens the panel over a blurred version of it.
      */
     static void show(Activity activity, String title, List<AppAdapter.Entry> apps) {
+        withBlurredHome(activity, backdrop -> show(activity, title, apps, backdrop));
+    }
+
+    /** Copies the screen, blurs it, and hands the result (or null when the copy failed) to {@code then}. */
+    static void withBlurredHome(Activity activity, java.util.function.Consumer<Drawable> then) {
         View root = activity.getWindow().getDecorView();
         int w = root.getWidth(), h = root.getHeight();
         if (w <= 0 || h <= 0) {
-            show(activity, title, apps, null);
+            then.accept(null);
             return;
         }
         try {
@@ -52,10 +57,10 @@ final class FolderDialog {
                     android.graphics.Bitmap.Config.ARGB_8888);
             android.view.PixelCopy.request(activity.getWindow(), shot, result -> {
                 if (activity.isFinishing() || activity.isDestroyed()) return;
-                show(activity, title, apps, result == android.view.PixelCopy.SUCCESS ? blur(activity, shot) : null);
+                then.accept(result == android.view.PixelCopy.SUCCESS ? blur(activity, shot) : null);
             }, new android.os.Handler(android.os.Looper.getMainLooper()));
         } catch (RuntimeException | OutOfMemoryError e) {
-            show(activity, title, apps, null);
+            then.accept(null);
         }
     }
 

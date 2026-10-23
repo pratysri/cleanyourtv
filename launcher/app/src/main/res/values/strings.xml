@@ -148,6 +148,8 @@
     <string name="continue_watching">Continue watching</string>
     <string name="jump_back_in">Jump back in · %1$s</string>
     <string name="just_now">just now</string>
+    <string name="whos_watching">Who\'s watching?</string>
+    <string name="moved_to">Moved %1$s to %2$s\'s Continue watching</string>
     <string name="folder_name">More Apps</string>
     <string name="profile_switched">Switched to %1$s</string>
 </resources>

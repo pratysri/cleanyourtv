@@ -337,6 +337,12 @@
         <item>Ayush</item>
     </string-array>
 
+    <!-- hisense-home fork: each person's own dock, "Name=pkg,pkg,...", in place of dock_apps while they are active. -->
+    <string-array name="profile_docks" translatable="false">
+        <item>Pratyush=com.netflix.ninja,com.amazon.amazonvideo.livingroom,com.google.android.youtube.tv,com.google.android.youtube.tvmusic</item>
+        <item>Ayush=com.netflix.ninja,com.amazon.amazonvideo.livingroom,com.google.android.youtube.tv,com.peacocktv.peacockandroid</item>
+    </string-array>
+
     <!-- hisense-home fork: weather under the clock for latitude/longitude above, from Open-Meteo. -->
     <bool name="weather">true</bool>
     <bool name="weather_fahrenheit">true</bool>

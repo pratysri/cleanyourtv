@@ -425,6 +425,17 @@ final class ContinueRow {
             }
         });
         card.setOnClickListener(v -> open(item));
+        // Hold OK: "Not mine", the show moves to the next person's Continue watching.
+        card.setOnLongClickListener(v -> {
+            if (!Profiles.enabled(activity) || item.appCard) return false;
+            String[] names = Profiles.names(activity);
+            int to = (Profiles.current(activity) + 1) % names.length;
+            Profiles.setOwner(activity, item.pkg, item.title, item.lastWatched, to);
+            android.widget.Toast.makeText(activity, activity.getString(R.string.moved_to, item.title, names[to]),
+                    android.widget.Toast.LENGTH_SHORT).show();
+            refresh();
+            return true;
+        });
         return card;
     }
 
