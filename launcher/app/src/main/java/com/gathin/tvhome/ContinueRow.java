@@ -54,7 +54,7 @@ final class ContinueRow {
     }
 
     static final int MAX_ITEMS = 20;
-    private static final int CARD_W_DP = 252, CARD_H_DP = 142, GAP_DP = 22, LABEL_ROOM_DP = 34;
+    private static final int CARD_W_DP = 208, CARD_H_DP = 117, GAP_DP = 18, LABEL_ROOM_DP = 34;
 
     private final Activity activity;
     private final Host host;
@@ -325,7 +325,7 @@ final class ContinueRow {
         View scrim = new View(activity);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{0x00000000, 0x99000000, 0xE6000000}));
-        card.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(84),
+        card.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(70),
                 Gravity.BOTTOM));
 
         TextView chip = new TextView(activity);
@@ -343,16 +343,16 @@ final class ContinueRow {
         chip.setBackground(chipBg);
         FrameLayout.LayoutParams chipLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
-        chipLp.setMargins(dp(10), dp(10), 0, 0);
+        chipLp.setMargins(dp(8), dp(8), 0, 0);
         card.addView(chip, chipLp);
 
         LinearLayout text = new LinearLayout(activity);
         text.setOrientation(LinearLayout.VERTICAL);
-        text.setPadding(dp(14), 0, dp(14), dp(item.progress >= 0 ? 16 : 12));
+        text.setPadding(dp(12), 0, dp(12), dp(item.progress >= 0 ? 14 : 10));
         TextView title = new TextView(activity);
         title.setText(item.title);
         title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         title.setTypeface(medium);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -361,7 +361,7 @@ final class ContinueRow {
             TextView sub = new TextView(activity);
             sub.setText(item.subtitle);
             sub.setTextColor(0xBFFFFFFF);
-            sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             sub.setTypeface(regular);
             sub.setSingleLine(true);
             sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -381,11 +381,11 @@ final class ContinueRow {
             fillBg.setColor(Color.WHITE);
             fillBg.setCornerRadius(2 * density);
             fill.setBackground(fillBg);
-            int trackW = dp(CARD_W_DP - 28);
+            int trackW = dp(CARD_W_DP - 24);
             track.addView(fill, new FrameLayout.LayoutParams(Math.max(dp(4), Math.round(trackW * item.progress)),
                     ViewGroup.LayoutParams.MATCH_PARENT));
             FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(trackW, dp(3), Gravity.BOTTOM);
-            tlp.setMargins(dp(14), 0, 0, dp(9));
+            tlp.setMargins(dp(12), 0, 0, dp(8));
             card.addView(track, tlp);
         }
 

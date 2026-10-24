@@ -1,5 +1,6 @@
 {
   "wallpaper": true,
   "wallpaper_rotation_minutes": 60,
-  "sky_intensity": 40
+  "sky_intensity": 0,
+  "ambient_glow": false
 }
