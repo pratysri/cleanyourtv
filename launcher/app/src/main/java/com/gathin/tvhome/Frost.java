@@ -53,6 +53,11 @@ final class Frost {
         for (Runnable r : new ArrayList<>(LISTENERS)) r.run();
     }
 
+    /** The small blurred wallpaper itself, for a full-screen frosted background; null when there is none. */
+    static Bitmap image() {
+        return enabled ? image : null;
+    }
+
     static void listen(Runnable r) {
         LISTENERS.add(r);
     }

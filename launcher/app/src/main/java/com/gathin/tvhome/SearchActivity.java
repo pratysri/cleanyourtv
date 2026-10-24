@@ -1,8 +1,12 @@
 package com.gathin.tvhome;
 
+import android.Manifest;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.SearchManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -17,8 +21,10 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Editable;
-import android.text.TextWatcher;
+import android.speech.RecognitionListener;
+import android.speech.RecognitionService;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.util.LruCache;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -26,9 +32,6 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
-import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -110,16 +113,35 @@ public final class SearchActivity extends Activity {
     private final AtomicInteger generation = new AtomicInteger();
     private float density;
     private Typeface regular, medium, light;
-    private EditText box;
-    private LinearLayout results;
+    /** What has been typed or said; the screen's own keyboard edits it, so no system keyboard is ever needed. */
+    private final StringBuilder typed = new StringBuilder();
+    private TextView query;
+    private View caret;
+    private LinearLayout keyboard, results;
+    private ScrollView resultsScroll;
     private String token;
     private final Runnable search = this::runSearch;
-    /** Opened with this extra (the top-bar Search, the remote's search key) it starts listening at once. */
+    /** Opened with this extra (the remote's search key) it starts listening at once. */
     static final String EXTRA_VOICE = "voice";
     private static final int VOICE_REQUEST = 7;
+    private static final String RECENT = "search_recent";
     private View mic;
     /** After a voice search, focus moves to the first result as soon as there is one. */
     private boolean focusFirstResult;
+    /** The recogniser's other guesses: offered as "Also heard", and tried in turn when the first finds nothing. */
+    private final List<String> heardAlso = new ArrayList<>();
+    private final List<String> fallbacks = new ArrayList<>();
+
+    // Listening: Google TV's own recogniser first (the one the remote's mic is tuned for), then the system's, then
+    // the plain speech screen. Each is dropped for the next when it fails outright.
+    private static final ComponentName KATNISS = new ComponentName("com.google.android.katniss",
+            "com.google.android.apps.tvsearch.voice.recognition.KatnissRecognitionService");
+    private int engine;
+    private SpeechRecognizer recognizer;
+    private boolean listeningNow;
+    private FrameLayout listening;
+    private TextView listenStatus, listenHeard;
+    private View listenRing;
 
     private static final class Title {
         String name, year, kind, poster;
@@ -135,78 +157,234 @@ public final class SearchActivity extends Activity {
         light = font(R.font.outfit_light);
         token = getString(R.string.tmdb_read_token).trim();
 
+        // Home's wallpaper, frosted, behind everything: Search reads as a layer over Home, not a separate app.
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xFF141824, 0xFF0B0D12, 0xFF07080B}));
-        ScrollView scroll = new ScrollView(this);
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.setClipChildren(false);
+        root.setBackgroundColor(0xFF0B0D12);
+        Bitmap frost = Frost.image();
+        if (frost != null) {
+            ImageView bg = new ImageView(this);
+            bg.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            bg.setImageBitmap(frost);
+            root.addView(bg, matchParent());
+        }
+        View scrim = new View(this);
+        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                frost != null ? new int[]{0x99070910, 0xC7070910, 0xE6070910}
+                        : new int[]{0xFF141824, 0xFF0B0D12, 0xFF07080B}));
+        root.addView(scrim, matchParent());
+
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(dp(64), dp(44), dp(64), dp(40));
+        page.setPadding(dp(48), dp(34), dp(48), 0);
         page.setClipChildren(false);
         page.setClipToPadding(false);
-        scroll.addView(page);
-        root.addView(scroll);
-        setContentView(root);
+        root.addView(page, matchParent());
 
-        box = new EditText(this);
-        box.setHint("Search movies, shows and apps");
-        box.setHintTextColor(0x80FFFFFF);
-        box.setTextColor(Color.WHITE);
-        box.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
-        box.setTypeface(light);
-        box.setSingleLine(true);
-        box.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        box.setPadding(dp(26), dp(16), dp(26), dp(16));
-        GradientDrawable field = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x26FFFFFF, 0x12FFFFFF});
-        field.setCornerRadius(28 * density);
-        field.setStroke(Math.max(1, dp(1)), 0x4DFFFFFF);
-        box.setBackground(field);
-        box.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void afterTextChanged(Editable s) {
-                main.removeCallbacks(search);
-                main.postDelayed(search, 450);
-            }
-        });
-        box.setOnEditorActionListener((v, action, ev) -> {
-            main.removeCallbacks(search);
-            runSearch();
-            InputMethodManager imm = getSystemService(InputMethodManager.class);
-            if (imm != null) imm.hideSoftInputFromWindow(box.getWindowToken(), 0);
-            View first = results.findFocus() == null ? firstFocusable(results) : null;
-            if (first != null) first.requestFocus();
-            return true;
-        });
-        // The mic, ahead of the box: with no keyboard to hand, voice is the main way in.
+        // The mic, then the field.
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setClipChildren(false);
         mic = micButton();
-        top.addView(mic, new LinearLayout.LayoutParams(dp(68), dp(68)));
-        LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        boxLp.leftMargin = dp(18);
-        top.addView(box, boxLp);
+        top.addView(mic, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        LinearLayout.LayoutParams fieldLp = new LinearLayout.LayoutParams(0, dp(56), 1f);
+        fieldLp.leftMargin = dp(16);
+        top.addView(field(), fieldLp);
         page.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // The keyboard on the left, results on the right.
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.HORIZONTAL);
+        body.setClipChildren(false);
+        body.setClipToPadding(false);
+        LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        bodyLp.topMargin = dp(20);
+        page.addView(body, bodyLp);
+
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.setClipChildren(false);
+        keyboard = keyboard();
+        left.addView(keyboard);
+        TextView credit = text(token.isEmpty()
+                ? "Movies and shows need a TMDB token in my-tv/tmdb.properties."
+                : "Titles from TMDB. Where to watch from JustWatch.", 11, regular, 0x66FFFFFF);
+        credit.setPadding(dp(4), dp(14), 0, 0);
+        credit.setMaxWidth(dp(280));
+        left.addView(credit);
+        body.addView(left, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        resultsScroll = new ScrollView(this);
+        resultsScroll.setVerticalScrollBarEnabled(false);
+        resultsScroll.setClipChildren(false);
+        resultsScroll.setClipToPadding(false);
+        resultsScroll.setPadding(0, 0, 0, dp(28));
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
         results.setClipChildren(false);
-        page.addView(results);
+        resultsScroll.addView(results);
+        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        rLp.leftMargin = dp(28);
+        body.addView(resultsScroll, rLp);
 
-        TextView credit = text(token.isEmpty()
-                ? "Movies and shows need a TMDB token in my-tv/tmdb.properties. Apps are searched either way."
-                : "Titles from TMDB. Where to watch from JustWatch.", 13, regular, 0x73FFFFFF);
-        credit.setPadding(0, dp(28), 0, 0);
-        page.addView(credit);
+        listening = listeningOverlay();
+        root.addView(listening, matchParent());
+        setContentView(root);
 
-        mic.requestFocus();
-        if (getIntent().getBooleanExtra(EXTRA_VOICE, false)) main.postDelayed(this::startVoice, 350);
+        showQuery();
+        runSearch();
+        View first = firstFocusable(keyboard);
+        if (first != null) first.requestFocus();
+        if (getIntent().getBooleanExtra(EXTRA_VOICE, false)) main.postDelayed(this::startVoice, 300);
+    }
+
+    // ---- the field and the keyboard ----------------------------------------------------------------
+
+    private View field() {
+        LinearLayout f = new LinearLayout(this);
+        f.setOrientation(LinearLayout.HORIZONTAL);
+        f.setGravity(Gravity.CENTER_VERTICAL);
+        f.setPadding(dp(20), 0, dp(20), 0);
+        f.setBackground(glass(28, false));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_search);
+        icon.setColorFilter(0xB3FFFFFF);
+        f.addView(icon, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        query = text("", 24, light, Color.WHITE);
+        query.setSingleLine(true);
+        query.setEllipsize(android.text.TextUtils.TruncateAt.START);
+        LinearLayout.LayoutParams qLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        qLp.leftMargin = dp(14);
+        f.addView(query, qLp);
+        caret = new View(this);
+        caret.setBackgroundColor(0xE6FFFFFF);
+        LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(dp(2), dp(26));
+        cLp.leftMargin = dp(2);
+        f.addView(caret, cLp);
+        ObjectAnimator blink = ObjectAnimator.ofFloat(caret, View.ALPHA, 1f, 1f, 0f, 0f);
+        blink.setDuration(1000);
+        blink.setRepeatCount(ValueAnimator.INFINITE);
+        blink.start();
+        return f;
+    }
+
+    private static final String[] ROWS = {"abcdef", "ghijkl", "mnopqr", "stuvwx", "yz1234", "567890"};
+
+    /** A 6×6 grid of letters and digits with Space, Delete and Clear under it, like Google TV's own. */
+    private LinearLayout keyboard() {
+        LinearLayout kb = new LinearLayout(this);
+        kb.setOrientation(LinearLayout.VERTICAL);
+        kb.setPadding(dp(12), dp(12), dp(12), dp(12));
+        kb.setBackground(glass(22, false));
+        kb.setClipChildren(false);
+        kb.setClipToPadding(false);
+        int key = dp(40), gap = dp(6);
+        for (String row : ROWS) {
+            LinearLayout r = keyRow(kb, gap);
+            for (char c : row.toCharArray()) {
+                String s = String.valueOf(c);
+                r.addView(key(s.toUpperCase(Locale.ROOT), 17, v -> type(s)), keyLp(key, key, gap));
+            }
+        }
+        LinearLayout r = keyRow(kb, 0);
+        int wide = key * 2 + gap;
+        r.addView(key("Space", 13, v -> type(" ")), keyLp(wide, key, gap));
+        View del = key("Delete", 13, v -> deleteOne());
+        del.setOnLongClickListener(v -> {
+            clearAll();
+            return true;
+        });
+        r.addView(del, keyLp(wide, key, gap));
+        r.addView(key("Clear", 13, v -> clearAll()), keyLp(wide, key, gap));
+        return kb;
+    }
+
+    private LinearLayout keyRow(LinearLayout kb, int bottomGap) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setClipChildren(false);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = bottomGap;
+        kb.addView(r, lp);
+        return r;
+    }
+
+    private LinearLayout.LayoutParams keyLp(int w, int h, int gap) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);
+        lp.rightMargin = gap;
+        return lp;
+    }
+
+    private TextView key(String label, float sp, View.OnClickListener click) {
+        TextView k = text(label, sp, medium, Color.WHITE);
+        k.setGravity(Gravity.CENTER);
+        k.setFocusable(true);
+        k.setClickable(true);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(10 * density);
+        bg.setColor(0x1AFFFFFF);
+        k.setBackground(bg);
+        k.setOnFocusChangeListener((v, f) -> {
+            bg.setColor(f ? 0xF2FFFFFF : 0x1AFFFFFF);
+            k.setTextColor(f ? 0xFF111318 : Color.WHITE);
+            v.animate().scaleX(f ? 1.12f : 1f).scaleY(f ? 1.12f : 1f).translationZ(f ? 6 * density : 0f)
+                    .setDuration(100).start();
+        });
+        k.setOnClickListener(click);
+        return k;
+    }
+
+    private void type(String s) {
+        if (typed.length() >= 60 || (" ".equals(s) && (typed.length() == 0 || typed.charAt(typed.length() - 1) == ' '))) {
+            return;
+        }
+        typed.append(s);
+        edited();
+    }
+
+    private void deleteOne() {
+        if (typed.length() == 0) return;
+        typed.setLength(typed.length() - 1);
+        edited();
+    }
+
+    private void clearAll() {
+        if (typed.length() == 0) return;
+        typed.setLength(0);
+        edited();
+    }
+
+    /** Typing: the voice guesses no longer apply, and the results follow a moment after the last key. */
+    private void edited() {
+        heardAlso.clear();
+        fallbacks.clear();
+        showQuery();
+        main.removeCallbacks(search);
+        main.postDelayed(search, typed.length() == 0 ? 0 : 400);
+    }
+
+    private void setQuery(String s) {
+        typed.setLength(0);
+        typed.append(s.trim());
+        showQuery();
+    }
+
+    private void showQuery() {
+        boolean empty = typed.length() == 0;
+        query.setText(empty ? "Search movies, shows and apps" : typed.toString());
+        query.setTextColor(empty ? 0x80FFFFFF : Color.WHITE);
+        // Before the hint when empty, after the words otherwise.
+        ViewGroup f = (ViewGroup) query.getParent();
+        f.removeView(caret);
+        f.addView(caret, empty ? f.indexOfChild(query) : f.indexOfChild(query) + 1);
+        LinearLayout.LayoutParams cLp = (LinearLayout.LayoutParams) caret.getLayoutParams();
+        cLp.leftMargin = empty ? dp(14) : dp(2);
+        ((LinearLayout.LayoutParams) query.getLayoutParams()).leftMargin = empty ? dp(4) : dp(14);
+        query.requestLayout();
     }
 
     // ---- voice -------------------------------------------------------------------------------------
@@ -232,29 +410,219 @@ public final class SearchActivity extends Activity {
         return b;
     }
 
-    /** Google's voice input (the Assistant's recogniser, through the standard speech intent) fills the box. */
+    /** The listening card: a mic that swells with your voice, and the words as they are recognised. */
+    private FrameLayout listeningOverlay() {
+        FrameLayout o = new FrameLayout(this);
+        o.setBackgroundColor(0xD9050609);
+        o.setVisibility(View.GONE);
+        o.setClickable(true);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+        FrameLayout disc = new FrameLayout(this);
+        listenRing = new View(this);
+        GradientDrawable ring = new GradientDrawable();
+        ring.setShape(GradientDrawable.OVAL);
+        ring.setColor(0x33FFFFFF);
+        listenRing.setBackground(ring);
+        disc.addView(listenRing, new FrameLayout.LayoutParams(dp(96), dp(96), Gravity.CENTER));
+        ImageView m = new ImageView(this);
+        m.setImageResource(R.drawable.ic_mic);
+        m.setColorFilter(0xFF111318);
+        m.setScaleType(ImageView.ScaleType.CENTER);
+        GradientDrawable dot = new GradientDrawable();
+        dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(Color.WHITE);
+        m.setBackground(dot);
+        disc.addView(m, new FrameLayout.LayoutParams(dp(80), dp(80), Gravity.CENTER));
+        col.addView(disc, new LinearLayout.LayoutParams(dp(150), dp(150)));
+        listenStatus = text("Listening…", 16, regular, 0xB3FFFFFF);
+        listenStatus.setPadding(0, dp(8), 0, 0);
+        listenStatus.setGravity(Gravity.CENTER);
+        col.addView(listenStatus);
+        listenHeard = text("", 32, light, Color.WHITE);
+        listenHeard.setGravity(Gravity.CENTER);
+        listenHeard.setPadding(dp(40), dp(14), dp(40), 0);
+        listenHeard.setMaxLines(2);
+        col.addView(listenHeard);
+        TextView hint = text("Say a movie, show or app.  Back to cancel.", 13, regular, 0x73FFFFFF);
+        hint.setPadding(0, dp(26), 0, 0);
+        hint.setGravity(Gravity.CENTER);
+        col.addView(hint);
+        o.addView(col, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        return o;
+    }
+
     private void startVoice() {
-        Intent i = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say a movie, show or app")
-                .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        if (listeningNow) return;
+        if (engine < 2 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, VOICE_REQUEST);
+            return;
+        }
+        if (engine < 2 && recognizer == null) recognizer = createRecognizer();
+        if (recognizer == null) {
+            engine = 2;
+            voiceScreen();
+            return;
+        }
+        listeningNow = true;
+        listenStatus.setText("Listening…");
+        listenHeard.setText("");
+        listenRing.setScaleX(1f);
+        listenRing.setScaleY(1f);
+        listening.setAlpha(0f);
+        listening.setVisibility(View.VISIBLE);
+        listening.animate().alpha(1f).setDuration(150).start();
         try {
+            recognizer.startListening(speechIntent());
+        } catch (RuntimeException e) {
+            nextEngine();
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int request, String[] perms, int[] grants) {
+        super.onRequestPermissionsResult(request, perms, grants);
+        if (request != VOICE_REQUEST) return;
+        if (grants.length == 0 || grants[0] != PackageManager.PERMISSION_GRANTED) engine = 2;
+        startVoice();
+    }
+
+    private SpeechRecognizer createRecognizer() {
+        while (engine < 2) {
+            try {
+                if (engine == 0) {
+                    Intent probe = new Intent(RecognitionService.SERVICE_INTERFACE).setComponent(KATNISS);
+                    if (!getPackageManager().queryIntentServices(probe, 0).isEmpty()) {
+                        return listen(SpeechRecognizer.createSpeechRecognizer(this, KATNISS));
+                    }
+                } else if (SpeechRecognizer.isRecognitionAvailable(this)) {
+                    return listen(SpeechRecognizer.createSpeechRecognizer(this));
+                }
+            } catch (RuntimeException ignored) {
+                // Next one.
+            }
+            engine++;
+        }
+        return null;
+    }
+
+    private Intent speechIntent() {
+        return new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                // Web search, not free form: tuned for short queries like titles and names.
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName())
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a movie, show or app");
+    }
+
+    private SpeechRecognizer listen(SpeechRecognizer r) {
+        r.setRecognitionListener(new RecognitionListener() {
+            @Override public void onReadyForSpeech(Bundle b) { listenStatus.setText("Listening…"); }
+            @Override public void onBeginningOfSpeech() { }
+            @Override public void onRmsChanged(float db) {
+                float s = 1f + Math.max(0f, Math.min(1f, db / 10f)) * 0.55f;
+                listenRing.animate().scaleX(s).scaleY(s).setDuration(90).start();
+            }
+            @Override public void onBufferReceived(byte[] b) { }
+            @Override public void onEndOfSpeech() { listenStatus.setText("Searching…"); }
+            @Override public void onError(int error) {
+                if (!listeningNow) return;
+                switch (error) {
+                    case SpeechRecognizer.ERROR_NO_MATCH:
+                    case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
+                        endListening("Didn’t catch that. Press the mic to try again.");
+                        break;
+                    case SpeechRecognizer.ERROR_NETWORK:
+                    case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
+                        endListening("No connection for voice right now.");
+                        break;
+                    default:
+                        nextEngine();   // this recogniser can't serve us: the next one
+                }
+            }
+            @Override public void onResults(Bundle b) {
+                if (!listeningNow) return;
+                List<String> heard = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                endListening(null);
+                heard(heard);
+            }
+            @Override public void onPartialResults(Bundle b) {
+                List<String> p = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                if (p != null && !p.isEmpty() && !p.get(0).trim().isEmpty()) listenHeard.setText(p.get(0));
+            }
+            @Override public void onEvent(int type, Bundle b) { }
+        });
+        return r;
+    }
+
+    private void nextEngine() {
+        listeningNow = false;
+        if (recognizer != null) recognizer.destroy();
+        recognizer = null;
+        listening.setVisibility(View.GONE);
+        engine++;
+        startVoice();
+    }
+
+    /** Closes the card, with a short message in it first when there is one. */
+    private void endListening(String message) {
+        listeningNow = false;
+        if (message == null) {
+            listening.animate().alpha(0f).setDuration(150).withEndAction(() -> listening.setVisibility(View.GONE)).start();
+            return;
+        }
+        listenStatus.setText(message);
+        listenRing.animate().scaleX(1f).scaleY(1f).setDuration(150).start();
+        main.postDelayed(() -> {
+            if (!listeningNow) listening.animate().alpha(0f).setDuration(200)
+                    .withEndAction(() -> listening.setVisibility(View.GONE)).start();
+        }, 1600);
+        mic.requestFocus();
+    }
+
+    private void cancelListening() {
+        listeningNow = false;
+        if (recognizer != null) recognizer.cancel();
+        listening.setVisibility(View.GONE);
+    }
+
+    /** Last resort: Google's own speech screen, through the standard intent. */
+    private void voiceScreen() {
+        try {
+            Intent i = speechIntent();
+            i.removeExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS);
             startActivityForResult(i, VOICE_REQUEST);
         } catch (RuntimeException e) {
-            Toast.makeText(this, "Voice input isn\u2019t available on this TV", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Voice input isn’t available on this TV", Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request != VOICE_REQUEST || result != RESULT_OK || data == null) return;
-        java.util.ArrayList<String> heard =
-                data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
-        if (heard == null || heard.isEmpty() || heard.get(0).trim().isEmpty()) return;
-        main.removeCallbacks(search);
-        box.setText(heard.get(0).trim());
-        box.setSelection(box.getText().length());
+        heard(data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS));
+    }
+
+    /** The recogniser's guesses, best first: search the first, keep the rest to offer and to fall back on. */
+    private void heard(List<String> guesses) {
+        List<String> distinct = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        if (guesses != null) {
+            for (String g : guesses) {
+                String t = g == null ? "" : g.trim();
+                if (!t.isEmpty() && seen.add(t.toLowerCase(Locale.ROOT))) distinct.add(t);
+            }
+        }
+        if (distinct.isEmpty()) return;
+        setQuery(distinct.get(0));
+        heardAlso.clear();
+        heardAlso.addAll(distinct.subList(1, Math.min(4, distinct.size())));
+        fallbacks.clear();
+        fallbacks.addAll(heardAlso);
+        remember(distinct.get(0));
         main.removeCallbacks(search);
         focusFirstResult = true;
         runSearch();
@@ -266,14 +634,6 @@ public final class SearchActivity extends Activity {
         return true;
     }
 
-    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_SEARCH || keyCode == KeyEvent.KEYCODE_VOICE_ASSIST) {
-            startVoice();
-            return true;
-        }
-        return super.onKeyDown(keyCode, event);
-    }
-
     private void focusFirstIfAsked() {
         if (!focusFirstResult) return;
         View first = firstFocusable(results);
@@ -283,18 +643,127 @@ public final class SearchActivity extends Activity {
         }
     }
 
+    @Override protected void onPause() {
+        super.onPause();
+        if (listeningNow) cancelListening();
+    }
+
     @Override protected void onDestroy() {
         super.onDestroy();
+        if (recognizer != null) recognizer.destroy();
         net.shutdownNow();
+    }
+
+    // ---- recent searches ---------------------------------------------------------------------------
+
+    private List<String> recent() {
+        String s = getSharedPreferences(HomePrefs.NAME, MODE_PRIVATE).getString(RECENT, "");
+        List<String> out = new ArrayList<>();
+        for (String q : s.split("\n")) if (!q.trim().isEmpty()) out.add(q.trim());
+        return out;
+    }
+
+    private void remember(String q) {
+        if (q == null || q.trim().isEmpty()) return;
+        List<String> list = recent();
+        list.removeIf(x -> x.equalsIgnoreCase(q.trim()));
+        list.add(0, q.trim());
+        while (list.size() > 8) list.remove(list.size() - 1);
+        getSharedPreferences(HomePrefs.NAME, MODE_PRIVATE).edit().putString(RECENT, String.join("\n", list)).apply();
+    }
+
+    /** Nothing typed: recent searches to pick again, or how to start. */
+    private void showIdle() {
+        List<String> recent = recent();
+        if (recent.isEmpty()) {
+            TextView t = text("Type with the keyboard, or press the mic and say a title.", 16, regular, 0x99FFFFFF);
+            t.setPadding(dp(4), dp(10), 0, 0);
+            results.addView(t);
+            return;
+        }
+        results.addView(heading("Recent searches"));
+        LinearLayout row = chipRow();
+        for (String q : recent) row.addView(chip(q, () -> {
+            setQuery(q);
+            focusFirstResult = true;
+            runSearch();
+        }));
+    }
+
+    private LinearLayout chipRow() {
+        HorizontalScrollView h = new HorizontalScrollView(this);
+        h.setHorizontalScrollBarEnabled(false);
+        h.setClipChildren(false);
+        h.setClipToPadding(false);
+        h.setPadding(0, dp(8), 0, dp(8));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setClipChildren(false);
+        row.setPadding(dp(6), 0, dp(40), 0);
+        row.setClipToPadding(false);   // the focused card grows past the padding
+        h.addView(row);
+        results.addView(h);
+        return row;
+    }
+
+    private View chip(String label, Runnable click) {
+        TextView c = text(label, 15, regular, Color.WHITE);
+        c.setGravity(Gravity.CENTER);
+        c.setPadding(dp(18), dp(9), dp(18), dp(9));
+        c.setFocusable(true);
+        c.setClickable(true);
+        GradientDrawable bg = glass(20, false);
+        c.setBackground(bg);
+        c.setOnFocusChangeListener((v, f) -> {
+            c.setBackground(f ? glass(20, true) : bg);
+            c.setTextColor(f ? 0xFF111318 : Color.WHITE);
+            v.animate().scaleX(f ? 1.06f : 1f).scaleY(f ? 1.06f : 1f).setDuration(110).start();
+        });
+        c.setOnClickListener(v -> click.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(10);
+        c.setLayoutParams(lp);
+        return c;
+    }
+
+    private GradientDrawable glass(float radiusDp, boolean focused) {
+        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, focused
+                ? new int[]{0xF2FFFFFF, 0xE0FFFFFF} : new int[]{0x26FFFFFF, 0x12FFFFFF});
+        g.setCornerRadius(radiusDp * density);
+        if (!focused) g.setStroke(Math.max(1, dp(1)), 0x40FFFFFF);
+        return g;
+    }
+
+    private static FrameLayout.LayoutParams matchParent() {
+        return new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
     // ---- searching ---------------------------------------------------------------------------------
 
     private void runSearch() {
-        String q = box.getText().toString().trim();
+        String q = typed.toString().trim();
         int gen = generation.incrementAndGet();
         results.removeAllViews();
-        if (q.isEmpty()) return;
+        resultsScroll.scrollTo(0, 0);
+        if (q.isEmpty()) {
+            showIdle();
+            return;
+        }
+        if (!heardAlso.isEmpty()) {
+            results.addView(heading("Also heard"));
+            LinearLayout chips = chipRow();
+            for (String alt : heardAlso) chips.addView(chip(alt, () -> {
+                String was = typed.toString();
+                heardAlso.remove(alt);
+                heardAlso.add(0, was);
+                fallbacks.clear();
+                setQuery(alt);
+                remember(alt);
+                focusFirstResult = true;
+                runSearch();
+            }));
+        }
         List<ResolveInfo> apps = matchingApps(q);
         if (!apps.isEmpty()) {
             results.addView(heading("Apps"));
@@ -309,6 +778,15 @@ public final class SearchActivity extends Activity {
             main.post(() -> {
                 if (gen != generation.get() || isDestroyed()) return;
                 if (titles.isEmpty()) {
+                    // A voice guess that finds nothing at all: the recogniser's next guess, if it had one.
+                    if (apps.isEmpty() && !fallbacks.isEmpty()) {
+                        String next = fallbacks.remove(0);
+                        heardAlso.remove(next);
+                        heardAlso.add(0, q);
+                        setQuery(next);
+                        runSearch();
+                        return;
+                    }
                     results.addView(heading("No movies or shows found for “" + q + "”"));
                     return;
                 }
@@ -427,6 +905,7 @@ public final class SearchActivity extends Activity {
     // ---- opening -----------------------------------------------------------------------------------
 
     private void pick(Title t) {
+        remember(typed.toString());
         if (t.apps.isEmpty()) {
             Toast.makeText(this, t.name + " isn’t streaming on your apps", Toast.LENGTH_SHORT).show();
             return;
@@ -472,8 +951,8 @@ public final class SearchActivity extends Activity {
     // ---- views -------------------------------------------------------------------------------------
 
     private TextView heading(String s) {
-        TextView t = text(s, 20, medium, Color.WHITE);
-        t.setPadding(0, dp(30), 0, dp(4));
+        TextView t = text(s, 17, medium, Color.WHITE);
+        t.setPadding(dp(4), results.getChildCount() == 0 ? dp(2) : dp(18), 0, dp(2));
         return t;
     }
 
@@ -482,11 +961,12 @@ public final class SearchActivity extends Activity {
         h.setHorizontalScrollBarEnabled(false);
         h.setClipChildren(false);
         h.setClipToPadding(false);
-        h.setPadding(0, dp(12), 0, dp(12));
+        h.setPadding(0, dp(12), 0, dp(14));
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setClipChildren(false);
-        row.setPadding(dp(4), 0, dp(40), 0);
+        row.setPadding(dp(10), 0, dp(40), 0);
+        row.setClipToPadding(false);   // the focused card grows past the padding
         h.addView(row);
         results.addView(h);
         return row;
@@ -494,7 +974,7 @@ public final class SearchActivity extends Activity {
 
     private View appTile(ResolveInfo ri) {
         PackageManager pm = getPackageManager();
-        FrameLayout card = card(dp(208), dp(117));
+        FrameLayout card = card(dp(160), dp(90));
         ImageView img = new ImageView(this);
         Drawable banner = ri.activityInfo.loadBanner(pm);
         if (banner == null) banner = ri.activityInfo.applicationInfo.loadBanner(pm);
@@ -503,7 +983,10 @@ public final class SearchActivity extends Activity {
         card.addView(img, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
         String pkg = ri.activityInfo.packageName;
-        card.setOnClickListener(v -> openIn(pkg, ""));
+        card.setOnClickListener(v -> {
+            remember(typed.toString());
+            openIn(pkg, "");
+        });
         card.setContentDescription(String.valueOf(ri.loadLabel(pm)));
         return withGap(card);
     }
@@ -512,7 +995,7 @@ public final class SearchActivity extends Activity {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setClipChildren(false);
-        FrameLayout card = card(dp(150), dp(225));
+        FrameLayout card = card(dp(116), dp(174));
         ImageView img = new ImageView(this);
         img.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(img, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -535,17 +1018,17 @@ public final class SearchActivity extends Activity {
         card.setOnClickListener(v -> pick(t));
         card.setContentDescription(t.name);
         col.addView(card);
-        TextView label = text(t.name + (t.year.isEmpty() ? "" : "  ·  " + t.year), 14, regular, 0xD9FFFFFF);
+        TextView label = text(t.name + (t.year.isEmpty() ? "" : "  ·  " + t.year), 13, regular, 0xD9FFFFFF);
         label.setSingleLine(true);
         label.setEllipsize(android.text.TextUtils.TruncateAt.END);
         label.setPadding(0, dp(10), 0, 0);
-        col.addView(label, new LinearLayout.LayoutParams(dp(150), ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView where = text(" ", 12, regular, 0x99FFFFFF);
+        col.addView(label, new LinearLayout.LayoutParams(dp(116), ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView where = text(" ", 11, regular, 0x99FFFFFF);
         where.setTag("where");
         where.setSingleLine(true);
         where.setEllipsize(android.text.TextUtils.TruncateAt.END);
         where.setPadding(0, dp(4), 0, 0);
-        col.addView(where, new LinearLayout.LayoutParams(dp(150), ViewGroup.LayoutParams.WRAP_CONTENT));
+        col.addView(where, new LinearLayout.LayoutParams(dp(116), ViewGroup.LayoutParams.WRAP_CONTENT));
         return withGap(col);
     }
 
@@ -612,7 +1095,7 @@ public final class SearchActivity extends Activity {
         LinearLayout.LayoutParams lp = v.getLayoutParams() instanceof LinearLayout.LayoutParams
                 ? (LinearLayout.LayoutParams) v.getLayoutParams()
                 : new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(26);
+        lp.rightMargin = dp(20);
         v.setLayoutParams(lp);
         return v;
     }
@@ -665,13 +1148,41 @@ public final class SearchActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
-        // Down from the box goes to the results (the keyboard may have taken Down otherwise).
-        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN && box.hasFocus()) {
-            View first = firstFocusable(results);
-            if (first != null) {
-                first.requestFocus();
+        int code = e.getKeyCode();
+        if (listening.getVisibility() == View.VISIBLE) {
+            // The card takes every key; Back (or OK) stops listening.
+            if (e.getAction() == KeyEvent.ACTION_UP && (code == KeyEvent.KEYCODE_BACK
+                    || code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER)) {
+                if (listeningNow) cancelListening();
+                else listening.setVisibility(View.GONE);
+                mic.requestFocus();
+            }
+            return true;
+        }
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            if (code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST) {
+                startVoice();
                 return true;
             }
+            // A real keyboard (or a remote with letters) types straight in.
+            if (code == KeyEvent.KEYCODE_DEL) {
+                deleteOne();
+                return true;
+            }
+            int ch = e.getUnicodeChar();
+            if (ch > 0 && !e.isCtrlPressed() && (Character.isLetterOrDigit(ch) || ch == ' ')) {
+                type(String.valueOf((char) Character.toLowerCase(ch)));
+                return true;
+            }
+            // Back from the results returns to the keyboard first, as on Google TV.
+            if (code == KeyEvent.KEYCODE_BACK && results.hasFocus()) {
+                return true;
+            }
+        }
+        if (e.getAction() == KeyEvent.ACTION_UP && code == KeyEvent.KEYCODE_BACK && results.hasFocus()) {
+            View first = firstFocusable(keyboard);
+            if (first != null) first.requestFocus();
+            return true;
         }
         return super.dispatchKeyEvent(e);
     }

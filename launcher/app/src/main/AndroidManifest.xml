@@ -11,6 +11,8 @@
     <!-- hisense-home fork: Continue watching (other apps' Watch Next rows) and online artwork/weather. -->
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- hisense-home fork: Search listens itself (SpeechRecognizer), so the words show as they are heard. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- When YouTube and Peacock were last opened, for their "Jump back in" cards. Granted with appops at install. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
@@ -69,6 +71,13 @@
         <!-- Coocaa OS sources for the Inputs menu (coocaa_sources); see CoocaaSources. -->
         <provider android:authorities="com.skyworth.tv.provider" />
         <provider android:authorities="com.skyworth.tv.sdk.provider" />
+        <!-- hisense-home fork: Search's voice, through Google TV's recogniser or the system one. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <application
@@ -212,7 +221,7 @@
         <activity
             android:name=".SearchActivity"
             android:exported="false"
-            android:windowSoftInputMode="adjustPan|stateVisible"
+            android:windowSoftInputMode="stateAlwaysHidden"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
             <!-- hisense-home fork: Home settings, and the aerial screensaver. -->
         <activity

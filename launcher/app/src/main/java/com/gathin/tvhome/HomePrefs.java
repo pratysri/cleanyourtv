@@ -16,7 +16,7 @@ import java.util.Set;
  * rebuild when it comes back.
  */
 final class HomePrefs {
-    private static final String NAME = "home_prefs";
+    static final String NAME = "home_prefs";
 
     private HomePrefs() { }
 

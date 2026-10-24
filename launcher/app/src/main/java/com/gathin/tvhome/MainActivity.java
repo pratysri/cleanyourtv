@@ -758,7 +758,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnProfile.setOnKeyListener(pillKeys);
         View btnSearch = findViewById(R.id.btnSearch);
         btnSearch.setOnKeyListener(pillKeys);
-        btnSearch.setOnClickListener(v -> openSearch());
+        btnSearch.setOnClickListener(v -> openSearch(false));
         btnLibraryTop.setOnKeyListener(pillKeys);
         if (advancedEffects) {
             for (View button : new View[]{btnInputs, btnWifi, btnProfile, btnReorder, btnLibraryTop, btnSettings}) {
@@ -2033,14 +2033,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
     }
 
-    /** Search, listening straight away: there is usually no keyboard at a TV. */
-    private void openSearch() {
-        startActivity(new Intent(this, SearchActivity.class).putExtra(SearchActivity.EXTRA_VOICE, true));
+    /** Search with its on-screen keyboard; {@code voice} starts listening at once instead. */
+    private void openSearch(boolean voice) {
+        startActivity(new Intent(this, SearchActivity.class).putExtra(SearchActivity.EXTRA_VOICE, voice));
     }
 
     /** The remote's search (mic) key on Home opens voice search, when the remote sends that key to apps. */
     @Override public boolean onSearchRequested() {
-        openSearch();
+        openSearch(true);
         return true;
     }
 
