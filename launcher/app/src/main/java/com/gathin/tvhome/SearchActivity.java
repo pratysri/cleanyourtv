@@ -62,8 +62,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Search (hisense-home fork): one box for installed apps and for movies and shows, with the apps on this TV that
  * stream each title. Titles and availability come from TMDB, whose streaming data is JustWatch's; the read token is
- * baked in at build time from a private file (my-tv/tmdb.properties). Picking a title opens the app that has it, at
- * its own search when the app accepts one.
+ * baked in at build time from a private file (my-tv/tmdb.properties). Picking a title opens it in the app that has
+ * it, by the link JustWatch keeps for Android TV, or at the app's own search when there is none.
  */
 public final class SearchActivity extends Activity {
     /** TMDB watch-provider id to the TV package that plays it (US). Only installed packages are shown. */
@@ -923,15 +923,127 @@ public final class SearchActivity extends Activity {
             return;
         }
         if (t.apps.size() == 1) {
-            openIn(t.apps.get(0), t.name);
+            openTitle(t, t.apps.get(0));
             return;
         }
         String[] names = new String[t.apps.size()];
         for (int i = 0; i < names.length; i++) names[i] = label(t.apps.get(i));
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle("Watch " + t.name + " on")
-                .setItems(names, (d, which) -> openIn(t.apps.get(which), t.name))
+                .setItems(names, (d, which) -> openTitle(t, t.apps.get(which)))
                 .show();
+    }
+
+    /**
+     * The title itself in the app: the Android TV link JustWatch keeps for each of its offers (the one Google TV
+     * opens), matched to TMDB's id. Without one, the app's search as before.
+     */
+    private void openTitle(Title t, String pkg) {
+        net.execute(() -> {
+            Intent exact = titleLink(t, pkg);
+            main.post(() -> {
+                if (isFinishing()) return;
+                if (exact != null) {
+                    try {
+                        startActivity(exact.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        return;
+                    } catch (RuntimeException ignored) {
+                        // The search below instead.
+                    }
+                }
+                openIn(pkg, t.name);
+            });
+        });
+    }
+
+    /** JustWatch's link to this title in {@code pkg} that the installed app takes, or null. */
+    private Intent titleLink(Title t, String pkg) {
+        JSONArray offers = justWatchOffers(t);
+        if (offers == null) return null;
+        PackageManager pm = getPackageManager();
+        // Subscription and free offers first: a store's link may lead to a purchase page.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < offers.length(); i++) {
+                JSONObject o = offers.optJSONObject(i);
+                if (o == null) continue;
+                String type = o.optString("monetizationType");
+                boolean watch = "FLATRATE".equals(type) || "FREE".equals(type) || "ADS".equals(type);
+                if (watch != (pass == 0)) continue;
+                for (String link : new String[]{o.optString("deeplinkURL", ""), o.optString("standardWebURL", "")}) {
+                    Intent intent = linkIntent(link, pkg);
+                    if (intent == null) continue;
+                    ResolveInfo ri = pm.resolveActivity(intent, 0);
+                    if (ri != null && ri.activityInfo != null && pkg.equals(ri.activityInfo.packageName)) return intent;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** An offer's link as an intent for {@code pkg}; null when it names another app or doesn't parse. */
+    private static Intent linkIntent(String link, String pkg) {
+        if (link == null || link.isEmpty() || "null".equals(link)) return null;
+        try {
+            Intent intent;
+            if (link.startsWith("intent:")) {
+                intent = Intent.parseUri(link, Intent.URI_INTENT_SCHEME);
+            } else if (link.startsWith("https://") || link.startsWith("http://")) {
+                intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+            } else {
+                return null;
+            }
+            String named = intent.getComponent() != null ? intent.getComponent().getPackageName() : intent.getPackage();
+            if (named != null && !named.equals(pkg)) return null;
+            if (named == null) intent.setPackage(pkg);
+            intent.setSelector(null);
+            return intent;
+        } catch (java.net.URISyntaxException e) {
+            return null;
+        }
+    }
+
+    /** The title's US offers from JustWatch's public API, found by name and matched on the TMDB id. */
+    private JSONArray justWatchOffers(Title t) {
+        try {
+            JSONObject vars = new JSONObject().put("q", t.name).put("country", "US").put("language", "en");
+            JSONObject body = new JSONObject().put("variables", vars).put("query",
+                    "query($q:String!,$country:Country!,$language:Language!){popularTitles(country:$country,first:8,"
+                            + "filter:{searchQuery:$q}){edges{node{objectType content(country:$country,language:$language)"
+                            + "{externalIds{tmdbId}} offers(country:$country,platform:WEB){monetizationType standardWebURL "
+                            + "deeplinkURL(platform:ANDROID_TV)}}}}}");
+            HttpURLConnection c = (HttpURLConnection) new URL("https://apis.justwatch.com/graphql").openConnection();
+            try {
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(6000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                c.getOutputStream().write(body.toString().getBytes("UTF-8"));
+                if (c.getResponseCode() != 200) return null;
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try (InputStream in = c.getInputStream()) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) > 0 && out.size() < 2 * 1024 * 1024) out.write(buf, 0, n);
+                }
+                JSONArray edges = new JSONObject(out.toString("UTF-8")).getJSONObject("data")
+                        .getJSONObject("popularTitles").getJSONArray("edges");
+                String type = "movie".equals(t.kind) ? "MOVIE" : "SHOW";
+                for (int i = 0; i < edges.length(); i++) {
+                    JSONObject node = edges.getJSONObject(i).getJSONObject("node");
+                    JSONObject ids = node.optJSONObject("content");
+                    ids = ids == null ? null : ids.optJSONObject("externalIds");
+                    if (type.equals(node.optString("objectType")) && ids != null
+                            && String.valueOf(t.id).equals(ids.optString("tmdbId"))) {
+                        return node.optJSONArray("offers");
+                    }
+                }
+            } finally {
+                c.disconnect();
+            }
+        } catch (Exception ignored) {
+            // Offline or the API changed: the app's search instead.
+        }
+        return null;
     }
 
     /** The app's own search with the title when it takes one, else a search link it handles, else the app. */
