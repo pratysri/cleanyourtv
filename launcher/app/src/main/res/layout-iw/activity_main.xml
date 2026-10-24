@@ -339,6 +339,15 @@
                     android:drawableStart="@drawable/ic_settings"
                     android:nextFocusDown="@+id/grid" />
 
+                <!-- hisense-home fork: who is watching, at the far end; each profile keeps its own tile order. -->
+                <TextView
+                    android:id="@+id/btnProfile"
+                    style="@style/TopButton"
+                    android:singleLine="true"
+                    android:visibility="gone"
+                    android:drawableStart="@drawable/ic_person"
+                    android:nextFocusDown="@+id/grid" />
+
                 <TextView
                     android:id="@+id/btnLibraryTop"
                     style="@style/TopButtonIcon"
@@ -354,14 +363,6 @@
                     android:drawableStart="@drawable/ic_swap_vert"
                     android:nextFocusDown="@+id/grid" />
 
-                <!-- hisense-home fork: who is watching; each profile keeps its own tile order. -->
-                <TextView
-                    android:id="@+id/btnProfile"
-                    style="@style/TopButton"
-                    android:singleLine="true"
-                    android:visibility="gone"
-                    android:drawableStart="@drawable/ic_person"
-                    android:nextFocusDown="@+id/grid" />
 
                 <TextView
                     android:id="@+id/btnWifi"

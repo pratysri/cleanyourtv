@@ -726,14 +726,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             int firstButton = R.id.btnSearch;   // hisense-home fork: Search leads the top bar
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
-            int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton) {
                 // hisense-home fork: past the first pill, the weather line (OK opens the forecast).
                 View wv = findViewById(R.id.weather);
                 if (!rtlMenuBar && wv.getVisibility() == View.VISIBLE && wv.isFocusable()) wv.requestFocus();
                 return true;
             }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton) return true;
             // hisense-home fork: step to the neighbouring visible pill. The focus finder could otherwise pick a
             // Continue watching card below instead of the pill beside this one.
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
