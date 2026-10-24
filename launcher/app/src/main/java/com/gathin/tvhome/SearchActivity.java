@@ -229,8 +229,9 @@ public final class SearchActivity extends Activity {
             }
         };
         resultsScroll.setVerticalScrollBarEnabled(false);
-        // The list clips at its edges, so scrolled cards never slide over the keyboard or the field; each row's
-        // padding, inside that edge, leaves room for the focus zoom.
+        // Rows scrolled up pass behind the field, fading out as they go.
+        resultsScroll.setVerticalFadingEdgeEnabled(true);
+        resultsScroll.setFadingEdgeLength(dp(40));
         resultsScroll.setClipToPadding(false);
         resultsScroll.setPadding(0, 0, 0, dp(28));
         results = new LinearLayout(this);
@@ -239,7 +240,11 @@ public final class SearchActivity extends Activity {
         resultsScroll.addView(results);
         LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
         rLp.leftMargin = dp(28);
-        body.addView(resultsScroll, rLp);
+        // The list clips at its frame's edges, so scrolled cards never slide over the keyboard or the field; each
+        // row's padding, inside that edge, leaves room for the focus zoom.
+        FrameLayout frame = new FrameLayout(this);
+        frame.addView(resultsScroll, matchParent());
+        body.addView(frame, rLp);
 
         listening = listeningOverlay();
         root.addView(listening, matchParent());
