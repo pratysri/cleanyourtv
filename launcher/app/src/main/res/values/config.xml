@@ -343,6 +343,13 @@
         <item>Ayush=com.netflix.ninja,com.amazon.amazonvideo.livingroom,com.google.android.youtube.tv,com.peacocktv.peacockandroid</item>
     </string-array>
 
+    <!-- hisense-home fork: each person's temperature unit, "Name=F" or "Name=C"; the weather panel's switch changes
+         it for whoever is watching. Anyone not listed uses weather_fahrenheit. -->
+    <string-array name="profile_units" translatable="false">
+        <item>Pratyush=C</item>
+        <item>Ayush=F</item>
+    </string-array>
+
     <!-- hisense-home fork: weather under the clock for latitude/longitude above, from Open-Meteo. -->
     <bool name="weather">true</bool>
     <bool name="weather_fahrenheit">true</bool>

@@ -2011,13 +2011,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         wv.setPadding(padH, padV, padH, padV);
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) wv.getLayoutParams();
         lp.setMarginStart(-padH);   // the text stays where it was; the highlight grows around it
+        lp.width = ViewGroup.LayoutParams.WRAP_CONTENT;   // the highlight hugs the words
         wv.setLayoutParams(lp);
+        // ...past the column's left edge, so nothing on the way up may clip it.
+        for (android.view.ViewParent p = wv.getParent(); p instanceof ViewGroup && p != root; p = p.getParent()) {
+            ((ViewGroup) p).setClipChildren(false);
+            ((ViewGroup) p).setClipToPadding(false);
+        }
         android.graphics.drawable.GradientDrawable glass = new android.graphics.drawable.GradientDrawable();
         glass.setCornerRadius(18 * density);
         glass.setColor(0x33FFFFFF);
         glass.setStroke((int) Math.max(1, density), 0x80FFFFFF);
         wv.setOnFocusChangeListener((v, f) -> v.setBackground(f ? glass : null));
-        wv.setOnClickListener(v -> WeatherPanel.show(this));
+        wv.setOnClickListener(v -> WeatherPanel.show(this, () -> {
+            // °F/°C switched in the panel: the line follows at once.
+            if (weather != null) weather.onDestroy();
+            weather = new Weather(wv, HomePrefs.latitude(this), HomePrefs.longitude(this), HomePrefs.fahrenheit(this));
+            weather.onResume();
+        }));
         wv.setOnKeyListener((v, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {

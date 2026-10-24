@@ -29,13 +29,14 @@ import java.util.Locale;
 
 /**
  * The weather panel (hisense-home fork, after Free My TV's drawer): selecting the weather line on Home opens it over
- * a blurred Home. Now, sunrise and sunset, the next twelve hours with the chance of rain, and five days. Open-Meteo,
- * no key. Back closes it.
+ * a blurred Home. Now, sunrise and sunset, the next eight hours with the chance of rain, five days, and a °F/°C
+ * switch. Open-Meteo, no key. Back closes it.
  */
 final class WeatherPanel {
     private WeatherPanel() { }
 
-    static void show(Activity a) {
+    /** {@code unitChanged} runs after the °F/°C switch, so Home's weather line can follow. */
+    static void show(Activity a, Runnable unitChanged) {
         FolderDialog.withBlurredHome(a, backdrop -> {
             Dialog dialog = new Dialog(a, android.R.style.Theme_DeviceDefault_NoActionBar_Fullscreen);
             Window w = dialog.getWindow();
@@ -43,37 +44,46 @@ final class WeatherPanel {
             float d = a.getResources().getDisplayMetrics().density;
             LinearLayout sheet = new LinearLayout(a);
             sheet.setOrientation(LinearLayout.VERTICAL);
-            int pad = Math.round(40 * d);
-            sheet.setPadding(pad, Math.round(32 * d), pad, Math.round(30 * d));
+            int pad = Math.round(28 * d);
+            sheet.setPadding(pad, Math.round(22 * d), pad, Math.round(18 * d));
             GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                     new int[]{0x2EFFFFFF, 0x12FFFFFF});
-            g.setCornerRadius(34 * d);
+            g.setCornerRadius(28 * d);
             g.setStroke(Math.round(1.5f * d), 0x59FFFFFF);
             sheet.setBackground(g);
             sheet.setFocusable(true);   // something to hold focus so Back reaches the dialog
-            TextView loading = text(a, "Loading the forecast for " + HomePrefs.city(a) + "…", 20, R.font.outfit_light,
-                    0xD9FFFFFF);
-            sheet.addView(loading);
             FrameLayout root = new FrameLayout(a);
-            root.addView(sheet, new FrameLayout.LayoutParams(Math.round(860 * d), ViewGroup.LayoutParams.WRAP_CONTENT,
+            root.addView(sheet, new FrameLayout.LayoutParams(Math.round(600 * d), ViewGroup.LayoutParams.WRAP_CONTENT,
                     Gravity.CENTER));
             dialog.setContentView(root);
             dialog.show();
-            sheet.requestFocus();
-            new Thread(() -> {
-                JSONObject json = fetch(a);
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    if (!dialog.isShowing()) return;
-                    sheet.removeAllViews();
-                    if (json == null) {
-                        sheet.addView(text(a, "The forecast couldn’t load. Check the TV’s internet.", 20,
-                                R.font.outfit_light, Color.WHITE));
-                    } else {
-                        fill(a, sheet, json, d);
-                    }
-                });
-            }, "weather-panel").start();
+            load(a, dialog, sheet, d, unitChanged);
         });
+    }
+
+    private static void load(Activity a, Dialog dialog, LinearLayout sheet, float d, Runnable unitChanged) {
+        sheet.removeAllViews();
+        sheet.addView(text(a, "Loading the forecast for " + HomePrefs.city(a) + "…", 17, R.font.outfit_light,
+                0xD9FFFFFF));
+        sheet.requestFocus();
+        new Thread(() -> {
+            JSONObject json = fetch(a);
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (!dialog.isShowing()) return;
+                sheet.removeAllViews();
+                if (json == null) {
+                    sheet.addView(text(a, "The forecast couldn’t load. Check the TV’s internet.", 17,
+                            R.font.outfit_light, Color.WHITE));
+                    return;
+                }
+                fill(a, sheet, json, d, () -> {
+                    // °F ⇄ °C: saved for Home and the screensaver too, then the panel reloads in the new unit.
+                    HomePrefs.setFahrenheitNow(a, !HomePrefs.fahrenheit(a));
+                    if (unitChanged != null) unitChanged.run();
+                    load(a, dialog, sheet, d, unitChanged);
+                });
+            });
+        }, "weather-panel").start();
     }
 
     private static JSONObject fetch(Activity a) {
@@ -104,37 +114,37 @@ final class WeatherPanel {
         }
     }
 
-    private static void fill(Activity a, LinearLayout sheet, JSONObject json, float d) {
+    private static void fill(Activity a, LinearLayout sheet, JSONObject json, float d, Runnable switchUnit) {
         try {
             JSONObject now = json.getJSONObject("current");
             JSONObject daily = json.getJSONObject("daily");
             JSONObject hourly = json.getJSONObject("hourly");
             boolean day = now.optInt("is_day", 1) == 1;
+            boolean f = HomePrefs.fahrenheit(a);
             int code = now.getInt("weather_code");
 
+            // Now, with the unit switch on the right.
             LinearLayout top = row(a);
             top.setGravity(Gravity.CENTER_VERTICAL);
-            top.addView(text(a, symbol(code, day), 54, R.font.outfit_regular, Color.WHITE));
+            top.addView(text(a, symbol(code, day), 34, R.font.outfit_regular, Color.WHITE));
             LinearLayout nowCol = col(a);
-            nowCol.setPadding(Math.round(20 * d), 0, 0, 0);
+            nowCol.setPadding(Math.round(14 * d), 0, 0, 0);
             nowCol.addView(text(a, Math.round(now.getDouble("temperature_2m")) + "°  "
-                    + Weather.describe(code, day), 40, R.font.outfit_light, Color.WHITE));
+                    + Weather.describe(code, day), 28, R.font.outfit_light, Color.WHITE));
             nowCol.addView(text(a, HomePrefs.city(a) + "  ·  feels like "
                     + Math.round(now.getDouble("apparent_temperature")) + "°  ·  humidity "
                     + now.optInt("relative_humidity_2m") + "%  ·  wind " + Math.round(now.optDouble("wind_speed_10m"))
-                    + (HomePrefs.fahrenheit(a) ? " mph" : " km/h"), 16, R.font.outfit_regular, 0xB3FFFFFF));
+                    + (f ? " mph" : " km/h"), 13, R.font.outfit_regular, 0xB3FFFFFF));
+            nowCol.addView(text(a, "Sunrise " + clock(daily.getJSONArray("sunrise").getString(0)) + "  ·  Sunset "
+                    + clock(daily.getJSONArray("sunset").getString(0)), 13, R.font.outfit_regular, 0xB3FFFFFF));
             top.addView(nowCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            LinearLayout sun = col(a);
-            sun.setGravity(Gravity.END);
-            sun.addView(text(a, "☀  Sunrise " + clock(daily.getJSONArray("sunrise").getString(0)), 16,
-                    R.font.outfit_regular, 0xD9FFFFFF));
-            sun.addView(text(a, "☾  Sunset " + clock(daily.getJSONArray("sunset").getString(0)), 16,
-                    R.font.outfit_regular, 0xD9FFFFFF));
-            top.addView(sun);
+            TextView unit = unitSwitch(a, f, d);
+            unit.setOnClickListener(v -> switchUnit.run());
+            top.addView(unit);
             sheet.addView(top);
 
-            // The next twelve hours from now.
-            sheet.addView(label(a, "Next 12 hours", d));
+            // The next eight hours from now.
+            sheet.addView(label(a, "Next hours", d));
             LinearLayout hours = row(a);
             JSONArray times = hourly.getJSONArray("time");
             String nowHour = now.optString("time", "").length() >= 13 ? now.getString("time").substring(0, 13) : "";
@@ -145,45 +155,88 @@ final class WeatherPanel {
                     break;
                 }
             }
-            for (int i = start; i < Math.min(times.length(), start + 12); i++) {
-                LinearLayout cell = col(a);
-                cell.setGravity(Gravity.CENTER_HORIZONTAL);
-                cell.addView(text(a, i == start ? "Now" : hour(times.getString(i)), 14, R.font.outfit_regular, 0xB3FFFFFF));
-                cell.addView(text(a, symbol(hourly.getJSONArray("weather_code").getInt(i),
-                        hourly.getJSONArray("is_day").optInt(i, 1) == 1), 24, R.font.outfit_regular, Color.WHITE));
-                cell.addView(text(a, Math.round(hourly.getJSONArray("temperature_2m").getDouble(i)) + "°", 18,
-                        R.font.outfit_medium, Color.WHITE));
+            for (int i = start; i < Math.min(times.length(), start + 8); i++) {
                 int rain = hourly.getJSONArray("precipitation_probability").optInt(i, 0);
-                cell.addView(text(a, rain >= 10 ? rain + "%" : " ", 13, R.font.outfit_regular, 0xFF8EC5FF));
-                hours.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                hours.addView(cell(a, i == start ? "Now" : hour(times.getString(i)),
+                        symbol(hourly.getJSONArray("weather_code").getInt(i),
+                                hourly.getJSONArray("is_day").optInt(i, 1) == 1),
+                        Math.round(hourly.getJSONArray("temperature_2m").getDouble(i)) + "°",
+                        rain >= 10 ? rain + "%" : " "), new LinearLayout.LayoutParams(0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             }
             sheet.addView(hours);
 
-            // Five days.
+            // Five days, side by side.
             sheet.addView(label(a, "Next 5 days", d));
-            JSONArray days = daily.getJSONArray("time");
-            for (int i = 1; i < Math.min(days.length(), 6); i++) {
-                LinearLayout r = row(a);
-                r.setGravity(Gravity.CENTER_VERTICAL);
-                r.setPadding(0, Math.round(6 * d), 0, Math.round(6 * d));
-                r.addView(text(a, weekday(days.getString(i)), 18, R.font.outfit_medium, Color.WHITE),
-                        new LinearLayout.LayoutParams(Math.round(150 * d), ViewGroup.LayoutParams.WRAP_CONTENT));
-                int dc = daily.getJSONArray("weather_code").getInt(i);
-                r.addView(text(a, symbol(dc, true) + "  " + Weather.describe(dc, true), 18, R.font.outfit_regular,
-                        0xE6FFFFFF), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout days = row(a);
+            JSONArray dates = daily.getJSONArray("time");
+            for (int i = 1; i < Math.min(dates.length(), 6); i++) {
                 int rain = daily.getJSONArray("precipitation_probability_max").optInt(i, 0);
-                r.addView(text(a, rain >= 10 ? rain + "% rain" : "", 15, R.font.outfit_regular, 0xFF8EC5FF),
-                        new LinearLayout.LayoutParams(Math.round(120 * d), ViewGroup.LayoutParams.WRAP_CONTENT));
-                r.addView(text(a, "H " + Math.round(daily.getJSONArray("temperature_2m_max").getDouble(i)) + "°   L "
-                        + Math.round(daily.getJSONArray("temperature_2m_min").getDouble(i)) + "°", 18,
-                        R.font.outfit_regular, Color.WHITE));
-                sheet.addView(r);
+                days.addView(cell(a, weekday(dates.getString(i)),
+                        symbol(daily.getJSONArray("weather_code").getInt(i), true),
+                        Math.round(daily.getJSONArray("temperature_2m_max").getDouble(i)) + "°  "
+                                + Math.round(daily.getJSONArray("temperature_2m_min").getDouble(i)) + "°",
+                        rain >= 10 ? rain + "% rain" : " "), new LinearLayout.LayoutParams(0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             }
-            sheet.addView(text(a, "Weather from Open-Meteo", 12, R.font.outfit_regular, 0x66FFFFFF));
+            sheet.addView(days);
+            TextView credit = text(a, "Weather from Open-Meteo", 10, R.font.outfit_regular, 0x66FFFFFF);
+            credit.setPadding(0, Math.round(10 * d), 0, 0);
+            sheet.addView(credit);
+            unit.requestFocus();
         } catch (Exception e) {
-            sheet.addView(text(a, "The forecast came back in a shape this panel doesn’t read.", 18,
+            sheet.addView(text(a, "The forecast came back in a shape this panel doesn’t read.", 16,
                     R.font.outfit_light, Color.WHITE));
         }
+    }
+
+    /** One column: a heading, a picture, the temperature and the chance of rain. */
+    private static LinearLayout cell(Activity a, String head, String pic, String temp, String rain) {
+        LinearLayout c = col(a);
+        c.setGravity(Gravity.CENTER_HORIZONTAL);
+        c.addView(text(a, head, 12, R.font.outfit_regular, 0xB3FFFFFF));
+        c.addView(text(a, pic, 18, R.font.outfit_regular, Color.WHITE));
+        c.addView(text(a, temp, 15, R.font.outfit_medium, Color.WHITE));
+        c.addView(text(a, rain, 11, R.font.outfit_regular, 0xFF8EC5FF));
+        for (int i = 0; i < c.getChildCount(); i++) ((TextView) c.getChildAt(i)).setGravity(Gravity.CENTER_HORIZONTAL);
+        return c;
+    }
+
+    /** The °F / °C switch: both units, the one in use bright; OK changes it. */
+    private static TextView unitSwitch(Activity a, boolean fahrenheit, float d) {
+        TextView t = text(a, "", 15, R.font.outfit_medium, Color.WHITE);
+        t.setFocusable(true);
+        t.setClickable(true);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(Math.round(14 * d), Math.round(7 * d), Math.round(14 * d), Math.round(7 * d));
+        t.setContentDescription(fahrenheit ? "Switch to Celsius" : "Switch to Fahrenheit");
+        GradientDrawable idle = new GradientDrawable();
+        idle.setCornerRadius(18 * d);
+        idle.setColor(0x1FFFFFFF);
+        idle.setStroke(Math.max(1, Math.round(d)), 0x59FFFFFF);
+        GradientDrawable lit = new GradientDrawable();
+        lit.setCornerRadius(18 * d);
+        lit.setColor(0xF2FFFFFF);
+        Runnable paint = () -> {
+            boolean focused = t.isFocused();
+            int on = focused ? 0xFF111318 : Color.WHITE, off = focused ? 0x80111318 : 0x73FFFFFF;
+            android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+            append(sb, "°F", fahrenheit ? on : off);
+            append(sb, "   ", off);
+            append(sb, "°C", fahrenheit ? off : on);
+            t.setText(sb);
+            t.setBackground(focused ? lit : idle);
+        };
+        paint.run();
+        t.setOnFocusChangeListener((v, focused) -> paint.run());
+        return t;
+    }
+
+    private static void append(android.text.SpannableStringBuilder sb, String s, int color) {
+        int from = sb.length();
+        sb.append(s);
+        sb.setSpan(new android.text.style.ForegroundColorSpan(color), from, sb.length(),
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     /** A small picture for the WMO weather code. */
@@ -221,16 +274,16 @@ final class WeatherPanel {
     private static String weekday(String iso) {
         try {
             Date t = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(iso);
-            return new SimpleDateFormat("EEEE", Locale.getDefault()).format(t);
+            return new SimpleDateFormat("EEE", Locale.getDefault()).format(t);
         } catch (Exception e) {
             return iso;
         }
     }
 
     private static TextView label(Activity a, String s, float d) {
-        TextView t = text(a, s.toUpperCase(Locale.getDefault()), 13, R.font.outfit_regular, 0x99FFFFFF);
+        TextView t = text(a, s.toUpperCase(Locale.getDefault()), 11, R.font.outfit_regular, 0x99FFFFFF);
         t.setLetterSpacing(0.14f);
-        t.setPadding(0, Math.round(26 * d), 0, Math.round(10 * d));
+        t.setPadding(0, Math.round(16 * d), 0, Math.round(6 * d));
         return t;
     }
 

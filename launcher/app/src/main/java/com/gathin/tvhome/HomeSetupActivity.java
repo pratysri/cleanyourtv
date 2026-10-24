@@ -99,7 +99,7 @@ public final class HomeSetupActivity extends Activity {
 
         section("Weather");
         row("city", "City", HomePrefs.city(this), v -> askCity());
-        row("units", "Temperature", HomePrefs.fahrenheit(this) ? "°F" : "°C", v -> {
+        row("units", Profiles.enabled(this) ? "Temperature for " + Profiles.currentName(this) : "Temperature", HomePrefs.fahrenheit(this) ? "°F" : "°C", v -> {
             HomePrefs.setFahrenheit(this, !HomePrefs.fahrenheit(this));
             build();
         });

@@ -51,13 +51,37 @@ final class HomePrefs {
         changed(ctx);
     }
 
+    /**
+     * °F or °C for whoever is watching: each profile keeps its own (profile_units in config.xml, then what they
+     * chose on the TV), and without profiles one setting for the TV.
+     */
     static boolean fahrenheit(Context ctx) {
+        String key = unitKey(ctx);
+        if (p(ctx).contains(key)) return p(ctx).getBoolean(key, true);
+        if (Profiles.enabled(ctx)) {
+            String who = Profiles.currentName(ctx);
+            for (String entry : ctx.getResources().getStringArray(R.array.profile_units)) {
+                int eq = entry.indexOf('=');
+                if (eq > 0 && entry.substring(0, eq).trim().equalsIgnoreCase(who)) {
+                    return entry.substring(eq + 1).trim().equalsIgnoreCase("F");
+                }
+            }
+        }
         return p(ctx).getBoolean("fahrenheit", ctx.getResources().getBoolean(R.bool.weather_fahrenheit));
     }
 
+    private static String unitKey(Context ctx) {
+        return Profiles.enabled(ctx) ? "fahrenheit_" + Profiles.currentName(ctx) : "fahrenheit";
+    }
+
     static void setFahrenheit(Context ctx, boolean on) {
-        p(ctx).edit().putBoolean("fahrenheit", on).commit();
+        setFahrenheitNow(ctx, on);
         changed(ctx);
+    }
+
+    /** For the weather panel: Home swaps its weather line itself, so no rebuild is asked for. */
+    static void setFahrenheitNow(Context ctx, boolean on) {
+        p(ctx).edit().putBoolean(unitKey(ctx), on).commit();
     }
 
     // ---- Home --------------------------------------------------------------------------------------
