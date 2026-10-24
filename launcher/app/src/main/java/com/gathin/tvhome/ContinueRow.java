@@ -125,7 +125,7 @@ final class ContinueRow {
         // Compact mode's fade: clear over the top half, dark under the row and dock.
         scrim = new View(activity);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x00000000, 0x00000000, 0x8C000000, 0xE6000000}));
+                new int[]{0x00000000, 0x00000000, 0x40000000, 0x8C000000}));
         scrim.setAlpha(0f);
         scrim.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         root.addView(scrim, at++, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
