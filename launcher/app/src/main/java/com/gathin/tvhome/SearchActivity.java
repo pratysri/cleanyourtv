@@ -144,6 +144,12 @@ public final class SearchActivity extends Activity {
     private TextView listenStatus, listenHeard;
     private View listenRing;
 
+    private static final String YOUTUBE = "com.google.android.youtube.tv";
+
+    private static final class Video {
+        String id, title, channel, length, views;
+    }
+
     private static final class Title {
         String name, year, kind, poster;
         int id;
@@ -783,6 +789,29 @@ public final class SearchActivity extends Activity {
             for (ResolveInfo ri : apps) row.addView(appTile(ri));
             focusFirstIfAsked();
         }
+        // Movies and shows, then YouTube under them, whichever answers first.
+        boolean[] moviesShown = {token.isEmpty()};
+        boolean[] noTitles = {false};
+        boolean youTube = installed(YOUTUBE);
+        java.util.concurrent.atomic.AtomicReference<List<Video>> videosWaiting = new java.util.concurrent.atomic.AtomicReference<>();
+        Runnable showVideos = () -> {
+            List<Video> videos = moviesShown[0] ? videosWaiting.getAndSet(null) : null;
+            if (videos == null) return;
+            // "Nothing found" only once YouTube has nothing either.
+            if (videos.isEmpty() && noTitles[0]) results.addView(heading("No movies, shows or videos found for “" + q + "”"));
+            addVideos(videos);
+        };
+        if (youTube) {
+            net.execute(() -> {
+                List<Video> videos = youTubeSearch(q);
+                if (gen != generation.get()) return;
+                main.post(() -> {
+                    if (gen != generation.get() || isDestroyed()) return;
+                    videosWaiting.set(videos);
+                    showVideos.run();
+                });
+            });
+        }
         if (token.isEmpty()) return;
         net.execute(() -> {
             List<Title> titles = tmdbSearch(q);
@@ -791,7 +820,7 @@ public final class SearchActivity extends Activity {
                 if (gen != generation.get() || isDestroyed()) return;
                 if (titles.isEmpty()) {
                     // A voice guess that finds nothing at all: the recogniser's next guess, if it had one.
-                    if (apps.isEmpty() && !fallbacks.isEmpty()) {
+                    if (apps.isEmpty() && !fallbacks.isEmpty() && (videosWaiting.get() == null || videosWaiting.get().isEmpty())) {
                         String next = fallbacks.remove(0);
                         heardAlso.remove(next);
                         heardAlso.add(0, q);
@@ -799,7 +828,10 @@ public final class SearchActivity extends Activity {
                         runSearch();
                         return;
                     }
-                    results.addView(heading("No movies or shows found for “" + q + "”"));
+                    if (!youTube) results.addView(heading("No movies or shows found for “" + q + "”"));
+                    noTitles[0] = true;
+                    moviesShown[0] = true;
+                    showVideos.run();
                     return;
                 }
                 results.addView(heading("Movies & shows"));
@@ -811,6 +843,8 @@ public final class SearchActivity extends Activity {
                     cards.add(card);
                 }
                 focusFirstIfAsked();
+                moviesShown[0] = true;
+                showVideos.run();
                 // Where to watch, per title, as it arrives.
                 for (int i = 0; i < titles.size(); i++) {
                     Title t = titles.get(i);
@@ -827,6 +861,135 @@ public final class SearchActivity extends Activity {
                 }
             });
         });
+    }
+
+    /** The YouTube row: videos for the query, played in the YouTube app. */
+    private void addVideos(List<Video> videos) {
+        if (videos.isEmpty()) return;
+        results.addView(heading("YouTube"));
+        LinearLayout row = shelf();
+        for (Video v : videos) row.addView(videoCard(v));
+        focusFirstIfAsked();
+    }
+
+    /** YouTube's own web search (no key needed), videos only, the first ten. */
+    private List<Video> youTubeSearch(String q) {
+        List<Video> out = new ArrayList<>();
+        try {
+            JSONObject client = new JSONObject().put("clientName", "WEB").put("clientVersion", "2.20250101.00.00")
+                    .put("hl", "en").put("gl", "US");
+            JSONObject body = new JSONObject().put("context", new JSONObject().put("client", client))
+                    .put("query", q).put("params", "EgIQAQ==");   // filter: videos
+            HttpURLConnection c = (HttpURLConnection) new URL("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+                    .openConnection();
+            try {
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(8000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                c.getOutputStream().write(body.toString().getBytes("UTF-8"));
+                if (c.getResponseCode() != 200) return out;
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                try (InputStream in = c.getInputStream()) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) > 0 && bytes.size() < 4 * 1024 * 1024) bytes.write(buf, 0, n);
+                }
+                collectVideos(new JSONObject(bytes.toString("UTF-8")), out);
+            } finally {
+                c.disconnect();
+            }
+        } catch (Exception ignored) {
+            // Offline or YouTube changed its page: no YouTube row.
+        }
+        return out;
+    }
+
+    /** Every videoRenderer in the response, in order, up to ten. */
+    private static void collectVideos(Object node, List<Video> out) {
+        if (out.size() >= 10) return;
+        if (node instanceof JSONObject) {
+            JSONObject o = (JSONObject) node;
+            JSONObject r = o.optJSONObject("videoRenderer");
+            if (r != null) {
+                Video v = new Video();
+                v.id = r.optString("videoId", "");
+                v.title = runs(r.optJSONObject("title"));
+                v.channel = runs(r.optJSONObject("ownerText"));
+                JSONObject len = r.optJSONObject("lengthText");
+                v.length = len == null ? "" : len.optString("simpleText", "");
+                JSONObject views = r.optJSONObject("shortViewCountText");
+                v.views = views == null ? "" : views.optString("simpleText", "");
+                if (!v.id.isEmpty() && !v.title.isEmpty()) out.add(v);
+                return;
+            }
+            for (java.util.Iterator<String> keys = o.keys(); keys.hasNext(); ) collectVideos(o.opt(keys.next()), out);
+        } else if (node instanceof JSONArray) {
+            JSONArray a = (JSONArray) node;
+            for (int i = 0; i < a.length(); i++) collectVideos(a.opt(i), out);
+        }
+    }
+
+    private static String runs(JSONObject text) {
+        if (text == null) return "";
+        if (text.has("simpleText")) return text.optString("simpleText", "");
+        JSONArray runs = text.optJSONArray("runs");
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; runs != null && i < runs.length(); i++) {
+            JSONObject r = runs.optJSONObject(i);
+            if (r != null) b.append(r.optString("text", ""));
+        }
+        return b.toString();
+    }
+
+    private View videoCard(Video v) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setClipChildren(false);
+        FrameLayout card = card(dp(208), dp(117));
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        card.addView(img, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        loadPoster("https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg", img);
+        if (!v.length.isEmpty()) {
+            TextView len = text(v.length, 11, medium, Color.WHITE);
+            len.setPadding(dp(6), dp(2), dp(6), dp(2));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(5 * density);
+            bg.setColor(0xCC000000);
+            len.setBackground(bg);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END);
+            lp.setMargins(0, 0, dp(6), dp(6));
+            card.addView(len, lp);
+        }
+        card.setOnClickListener(x -> playVideo(v));
+        card.setContentDescription(v.title);
+        col.addView(card);
+        TextView title = text(v.title, 13, regular, 0xD9FFFFFF);
+        title.setMaxLines(2);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setPadding(0, dp(10), 0, 0);
+        col.addView(title, new LinearLayout.LayoutParams(dp(208), ViewGroup.LayoutParams.WRAP_CONTENT));
+        String meta = v.channel + (v.views.isEmpty() ? "" : "  ·  " + v.views);
+        TextView sub = text(meta, 11, regular, 0x99FFFFFF);
+        sub.setSingleLine(true);
+        sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        sub.setPadding(0, dp(4), 0, 0);
+        col.addView(sub, new LinearLayout.LayoutParams(dp(208), ViewGroup.LayoutParams.WRAP_CONTENT));
+        return withGap(col);
+    }
+
+    private void playVideo(Video v) {
+        remember(typed.toString());
+        Intent watch = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=" + v.id))
+                .setPackage(YOUTUBE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(watch);
+        } catch (RuntimeException e) {
+            openIn(YOUTUBE, v.title);
+        }
     }
 
     private List<ResolveInfo> matchingApps(String q) {
