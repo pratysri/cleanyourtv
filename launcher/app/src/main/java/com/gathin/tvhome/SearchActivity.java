@@ -225,7 +225,7 @@ public final class SearchActivity extends Activity {
 
         resultsScroll = new ScrollView(this) {
             @Override protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) {
-                return super.computeScrollDeltaToGetChildRectOnScreen(roomy(rect, 0, dp(20)));
+                return super.computeScrollDeltaToGetChildRectOnScreen(roomy(wholeRow(rect), 0, dp(20)));
             }
         };
         resultsScroll.setVerticalScrollBarEnabled(false);
@@ -872,7 +872,7 @@ public final class SearchActivity extends Activity {
         focusFirstIfAsked();
     }
 
-    /** YouTube's own web search (no key needed), videos only, the first ten. */
+    /** YouTube's own web search (no key needed), videos only, the first twenty. */
     private List<Video> youTubeSearch(String q) {
         List<Video> out = new ArrayList<>();
         try {
@@ -905,9 +905,9 @@ public final class SearchActivity extends Activity {
         return out;
     }
 
-    /** Every videoRenderer in the response, in order, up to ten. */
+    /** Every videoRenderer in the response, in order, up to twenty. */
     private static void collectVideos(Object node, List<Video> out) {
-        if (out.size() >= 10) return;
+        if (out.size() >= 20) return;
         if (node instanceof JSONObject) {
             JSONObject o = (JSONObject) node;
             JSONObject r = o.optJSONObject("videoRenderer");
@@ -1243,6 +1243,18 @@ public final class SearchActivity extends Activity {
         return t;
     }
 
+    /** The row a focused card is in, with its heading and the titles under its cards, so one press down shows it all. */
+    private Rect wholeRow(Rect rect) {
+        for (int i = 0; i < results.getChildCount(); i++) {
+            View row = results.getChildAt(i);
+            if (!(row instanceof HorizontalScrollView) || rect.centerY() < row.getTop() || rect.centerY() > row.getBottom()) continue;
+            View above = i > 0 ? results.getChildAt(i - 1) : null;
+            int top = above instanceof TextView ? above.getTop() : row.getTop();
+            return new Rect(rect.left, top, rect.right, row.getBottom());
+        }
+        return rect;
+    }
+
     /** A focused card scrolls in with room around it, so its focus zoom is never cut by the row's edge. */
     private static Rect roomy(Rect rect, int dx, int dy) {
         Rect r = new Rect(rect);
@@ -1254,6 +1266,16 @@ public final class SearchActivity extends Activity {
         HorizontalScrollView h = new HorizontalScrollView(this) {
             @Override protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) {
                 return super.computeScrollDeltaToGetChildRectOnScreen(roomy(rect, dp(24), 0));
+            }
+
+            /** Right on the last card stays put, instead of jumping to another row. */
+            @Override public View focusSearch(View focused, int direction) {
+                View next = super.focusSearch(focused, direction);
+                if (direction != View.FOCUS_RIGHT) return next;
+                for (View v = next; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) {
+                    if (v == this) return next;
+                }
+                return focused;
             }
         };
         h.setHorizontalScrollBarEnabled(false);
