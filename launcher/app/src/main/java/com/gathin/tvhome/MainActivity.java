@@ -471,6 +471,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         greeting = findViewById(R.id.greeting);
         clockBlock = findViewById(R.id.leftBlock);
         greetingColor = greeting.getCurrentTextColor();
+        // A soft dark halo: invisible on a dark wallpaper, keeps the white header readable over bright sky.
+        float d = getResources().getDisplayMetrics().density;
+        for (int id : new int[]{R.id.greeting, R.id.clock, R.id.ampm, R.id.shamsiDate, R.id.weather, R.id.date}) {
+            ((TextView) findViewById(id)).setShadowLayer(6 * d, 0, 0.5f * d, 0xA6000000);
+        }
         if (getResources().getBoolean(R.bool.rtl_menu_bar)) {
             // Center Hebrew greetings over the numeric time, independent of a visible AM/PM label.
             findViewById(R.id.clock).addOnLayoutChangeListener((v, l, t, right, bottom, ol, ot, or, ob) -> {
