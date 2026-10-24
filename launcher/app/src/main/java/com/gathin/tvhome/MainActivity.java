@@ -432,7 +432,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 }
                 @Override public void focusTopBarFromRow() {
                     // The row and dock stay down while the top bar has focus; only the dock brings them back up.
-                    (btnInputs.getVisibility() == View.VISIBLE ? btnInputs : firstTopButton()).requestFocus();
+                    // hisense-home fork: Search, the first button, rather than Inputs.
+                    findViewById(R.id.btnSearch).requestFocus();
                 }
             });
         }
