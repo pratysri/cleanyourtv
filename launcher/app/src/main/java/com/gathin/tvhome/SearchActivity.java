@@ -14,6 +14,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Outline;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -216,9 +217,14 @@ public final class SearchActivity extends Activity {
         body.addView(left, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        resultsScroll = new ScrollView(this);
+        resultsScroll = new ScrollView(this) {
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) {
+                return super.computeScrollDeltaToGetChildRectOnScreen(roomy(rect, 0, dp(20)));
+            }
+        };
         resultsScroll.setVerticalScrollBarEnabled(false);
-        resultsScroll.setClipChildren(false);
+        // The list clips at its edges, so scrolled cards never slide over the keyboard or the field; each row's
+        // padding, inside that edge, leaves room for the focus zoom.
         resultsScroll.setClipToPadding(false);
         resultsScroll.setPadding(0, 0, 0, dp(28));
         results = new LinearLayout(this);
@@ -691,8 +697,14 @@ public final class SearchActivity extends Activity {
     }
 
     private LinearLayout chipRow() {
-        HorizontalScrollView h = new HorizontalScrollView(this);
+        HorizontalScrollView h = new HorizontalScrollView(this) {
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) {
+                return super.computeScrollDeltaToGetChildRectOnScreen(roomy(rect, dp(24), 0));
+            }
+        };
         h.setHorizontalScrollBarEnabled(false);
+        h.setHorizontalFadingEdgeEnabled(true);   // a card half scrolled out fades instead of being sliced
+        h.setFadingEdgeLength(dp(48));
         h.setClipChildren(false);
         h.setClipToPadding(false);
         h.setPadding(0, dp(8), 0, dp(8));
@@ -956,9 +968,22 @@ public final class SearchActivity extends Activity {
         return t;
     }
 
+    /** A focused card scrolls in with room around it, so its focus zoom is never cut by the row's edge. */
+    private static Rect roomy(Rect rect, int dx, int dy) {
+        Rect r = new Rect(rect);
+        r.inset(-dx, -dy);
+        return r;
+    }
+
     private LinearLayout shelf() {
-        HorizontalScrollView h = new HorizontalScrollView(this);
+        HorizontalScrollView h = new HorizontalScrollView(this) {
+            @Override protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) {
+                return super.computeScrollDeltaToGetChildRectOnScreen(roomy(rect, dp(24), 0));
+            }
+        };
         h.setHorizontalScrollBarEnabled(false);
+        h.setHorizontalFadingEdgeEnabled(true);   // a card half scrolled out fades instead of being sliced
+        h.setFadingEdgeLength(dp(48));
         h.setClipChildren(false);
         h.setClipToPadding(false);
         h.setPadding(0, dp(12), 0, dp(14));
